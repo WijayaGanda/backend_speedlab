@@ -5,7 +5,7 @@ const session = require('express-session');
 const cors = require('cors');
 require('dotenv').config();
 
-require('../passport');
+// require('../passport');
 
 // Import routes
 const authRoutes = require("../routes/authRoutes");
