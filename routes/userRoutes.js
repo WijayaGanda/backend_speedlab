@@ -1,0 +1,23 @@
+const express = require("express");
+const router = express.Router();
+const { 
+  getAllUsers, 
+  getUserById,
+  createUser,
+  updateUser,
+  deleteUser 
+} = require("../controllers/userController");
+const { authenticate, authorize } = require("../middleware/auth");
+
+// Semua routes memerlukan autentikasi dan role admin
+router.use(authenticate);
+router.use(authorize('admin', 'pemilik'));
+
+// CRUD operations
+router.get("/", getAllUsers);
+router.get("/:id", getUserById);
+router.post("/", createUser);
+router.put("/:id", updateUser);
+router.delete("/:id", deleteUser);
+
+module.exports = router;
