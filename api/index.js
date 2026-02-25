@@ -4,6 +4,7 @@ const passport = require('passport');
 const session = require('express-session');
 const cors = require('cors');
 require('dotenv').config();
+const connectDB = require("../lib/mongodb");
 
 // require('../passport');
 
@@ -25,9 +26,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Koneksi MongoDB
-mongoose.connect(process.env.MONGODB_URI || "mongodb+srv://speedlab:speedlabwijaya@cluster0.oskgsvi.mongodb.net/?appName=Cluster0")
-  .then(() => console.log('MongoDB connected successfully'))
-  .catch(err => console.error('MongoDB connection error:', err));
+app.use(async (req, res, next) => {
+  await connectDB();
+  next();
+});
 
 // SESSION
 app.use(
