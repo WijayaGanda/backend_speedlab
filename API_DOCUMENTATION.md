@@ -232,6 +232,12 @@ Content-Type: application/json
 GET /api/bookings/my-bookings
 Authorization: Bearer <token>
 ```
+Query params (optional):
+- `motorcycleId=abc123` - filter booking untuk motor tertentu
+
+Contoh:
+- Semua booking: `GET /api/bookings/my-bookings`
+- Booking motor tertentu: `GET /api/bookings/my-bookings?motorcycleId=6789abc123def456`
 
 #### Get All Bookings (Admin/Pemilik) - FIFO & Filter by Date
 ```http

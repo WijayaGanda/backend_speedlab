@@ -108,7 +108,15 @@ const getAllBookings = async (req, res) => {
 // Read - Get bookings by user (untuk pelanggan)
 const getUserBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ userId: req.user._id })
+    const { motorcycleId } = req.query;
+    
+    // Build query
+    const query = { userId: req.user._id };
+    if (motorcycleId) {
+      query.motorcycleId = motorcycleId;
+    }
+    
+    const bookings = await Booking.find(query)
       .populate('motorcycleId')
       .populate('serviceIds')
       .populate('verifiedBy', 'name')
