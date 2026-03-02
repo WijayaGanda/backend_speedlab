@@ -150,11 +150,14 @@ Response:
 }
 ```
 
-#### Delete Motorcycle (Admin)
+#### Delete Motorcycle (Admin/Customer)
 ```http
 DELETE /api/motorcycles/:id
 Authorization: Bearer <token>
 ```
+**Note:** 
+- Customer hanya bisa menghapus motor milik mereka sendiri
+- Admin bisa menghapus motor siapa saja
 
 ---
 
@@ -226,7 +229,7 @@ Content-Type: application/json
   "notes": "Mohon dikerjakan pagi"
 }
 ```
-
+  
 #### Get My Bookings (Customer)
 ```http
 GET /api/bookings/my-bookings

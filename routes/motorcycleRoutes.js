@@ -27,6 +27,6 @@ router.get("/", authorize('admin', 'pemilik'), getAllMotorcycles);
 router.get("/:id", getMotorcycleById);
 router.put("/:id", updateMotorcycle);
 router.patch("/:id/status", authorize('admin'), updateMotorcycleStatus);
-router.delete("/:id", authorize('admin'), deleteMotorcycle);
+router.delete("/:id", authorize('admin', 'pelanggan'), deleteMotorcycle);
 
 module.exports = router;

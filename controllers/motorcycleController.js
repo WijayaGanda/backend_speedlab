@@ -220,7 +220,7 @@ const updateMotorcycleStatus = async (req, res) => {
 // Delete - Delete motorcycle
 const deleteMotorcycle = async (req, res) => {
   try {
-    const motorcycle = await Motorcycle.findByIdAndDelete(req.params.id);
+    const motorcycle = await Motorcycle.findById(req.params.id);
 
     if (!motorcycle) {
       return res.status(404).json({ 
@@ -228,6 +228,19 @@ const deleteMotorcycle = async (req, res) => {
         message: "Motor tidak ditemukan" 
       });
     }
+
+    // Jika user adalah pelanggan, cek apakah motor miliknya
+    if (req.user.role === 'pelanggan') {
+      if (motorcycle.userId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ 
+          success: false,
+          message: "Anda hanya bisa menghapus motor milik Anda sendiri" 
+        });
+      }
+    }
+
+    // Admin bisa menghapus motor siapa saja
+    await Motorcycle.findByIdAndDelete(req.params.id);
 
     res.status(200).json({
       success: true,
