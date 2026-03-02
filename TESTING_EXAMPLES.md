@@ -141,13 +141,20 @@ GET http://localhost:3000/api/bookings/my-bookings
 Authorization: Bearer <customer-token>
 ```
 
-### 2.7 Lihat Riwayat Servis Saya
+### 2.7 Cancel Booking Saya
+```json
+PATCH http://localhost:3000/api/bookings/<booking-id>/cancel
+Authorization: Bearer <customer-token>
+```
+Note: Hanya bisa cancel booking dengan status 'Menunggu Verifikasi' atau 'Terverifikasi'
+
+### 2.8 Lihat Riwayat Servis Saya
 ```json
 GET http://localhost:3000/api/service-histories/my-history
 Authorization: Bearer <customer-token>
 ```
 
-### 2.8 Klaim Garansi
+### 2.9 Klaim Garansi
 ```json
 POST http://localhost:3000/api/warranties
 Authorization: Bearer <customer-token>

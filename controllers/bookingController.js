@@ -393,6 +393,58 @@ const getBookingStats = async (req, res) => {
   }
 };
 
+// Cancel Booking (untuk customer)
+const cancelBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .populate('userId', 'name email phone')
+      .populate('motorcycleId')
+      .populate('serviceIds')
+      .populate('verifiedBy', 'name');
+
+    if (!booking) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Booking tidak ditemukan" 
+      });
+    }
+
+    // Cek apakah booking milik customer yang login
+    if (booking.userId._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        success: false,
+        message: "Anda hanya bisa membatalkan booking milik Anda sendiri" 
+      });
+    }
+
+    // Cek apakah status masih bisa dibatalkan
+    const cancelableStatuses = ['Menunggu Verifikasi', 'Terverifikasi'];
+    if (!cancelableStatuses.includes(booking.status)) {
+      return res.status(400).json({ 
+        success: false,
+        message: `Booking dengan status '${booking.status}' tidak dapat dibatalkan` 
+      });
+    }
+
+    // Update status menjadi Dibatalkan
+    booking.status = 'Dibatalkan';
+    booking.updatedAt = Date.now();
+    await booking.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Booking berhasil dibatalkan",
+      data: booking
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      message: "Error membatalkan booking", 
+      error: error.message 
+    });
+  }
+};
+
 module.exports = {
   createBooking,
   getAllBookings,
@@ -402,5 +454,6 @@ module.exports = {
   updateBookingStatus,
   updateBooking,
   deleteBooking,
-  getBookingStats
+  getBookingStats,
+  cancelBooking
 };

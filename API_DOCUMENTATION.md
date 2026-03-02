@@ -242,6 +242,16 @@ Contoh:
 - Semua booking: `GET /api/bookings/my-bookings`
 - Booking motor tertentu: `GET /api/bookings/my-bookings?motorcycleId=6789abc123def456`
 
+#### Cancel Booking (Customer)
+```http
+PATCH /api/bookings/:id/cancel
+Authorization: Bearer <token>
+```
+**Note:** 
+- Customer hanya bisa membatalkan booking milik mereka sendiri
+- Hanya booking dengan status 'Menunggu Verifikasi' atau 'Terverifikasi' yang dapat dibatalkan
+- Booking dengan status 'Sedang Dikerjakan', 'Selesai', atau 'Diambil' tidak dapat dibatalkan
+
 #### Get All Bookings (Admin/Pemilik) - FIFO & Filter by Date
 ```http
 GET /api/bookings
