@@ -17,7 +17,7 @@ const bookingRoutes = require("../routes/bookingRoutes");
 const serviceHistoryRoutes = require("../routes/serviceHistoryRoutes");
 const warrantyRoutes = require("../routes/warrantyRoutes");
 const employeeRoutes = require("../routes/employeeRoutes");
-const paymentRoutes = require('./routes/paymentRoutes');
+const paymentRoutes = require('../routes/paymentRoutes');
 
 const app = express();
 
