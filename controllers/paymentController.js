@@ -1,6 +1,6 @@
 const midtransClient = require('midtrans-client');
-const Payment = require('../models/PaymentModel');
-const Booking = require('../models/BookingModel'); 
+const Payment = require('../model/PaymentModel');
+const Booking = require('../model/BookingModel'); 
 
 // Inisialisasi Midtrans Snap
 const snap = new midtransClient.Snap({
