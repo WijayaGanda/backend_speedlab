@@ -17,6 +17,7 @@ const bookingRoutes = require("../routes/bookingRoutes");
 const serviceHistoryRoutes = require("../routes/serviceHistoryRoutes");
 const warrantyRoutes = require("../routes/warrantyRoutes");
 const employeeRoutes = require("../routes/employeeRoutes");
+const paymentRoutes = require('./routes/paymentRoutes');
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/service-histories", serviceHistoryRoutes);
 app.use("/api/warranties", warrantyRoutes);
 app.use("/api/employees", employeeRoutes);
+app.use('/api/payment', paymentRoutes);
 
 // GOOGLE LOGIN (keep existing for backward compatibility)
 app.get(
