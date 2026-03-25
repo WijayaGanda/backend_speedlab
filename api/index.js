@@ -91,7 +91,8 @@ app.get("/", (req, res) => {
       bookings: "/api/bookings",
       serviceHistories: "/api/service-histories",
       warranties: "/api/warranties",
-      employees: "/api/employees"
+      employees: "/api/employees",
+      payment: "/api/payment"
     }
   });
 });

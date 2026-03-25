@@ -20,6 +20,19 @@ const createBooking = async (req, res) => {
       });
     }
 
+    // Validasi motor tidak sedang dalam status booking yang aktif
+    const activeBooking = await Booking.findOne({
+      motorcycleId,
+      status: { $nin: ['Selesai', 'Dibatalkan', 'Diambil'] }
+    });
+
+    if (activeBooking) {
+      return res.status(400).json({
+        success: false,
+        message: "Motor ini sedang dalam proses booking. Tunggu hingga status booking berubah menjadi Selesai atau Dibatalkan sebelum membuat booking baru"
+      });
+    }
+
     // Hitung total harga
     let totalPrice = 0;
     if (serviceIds && serviceIds.length > 0) {

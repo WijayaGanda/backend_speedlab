@@ -168,6 +168,35 @@ Content-Type: application/json
 }
 ```
 
+### 2.10 Buat Payment untuk Booking
+```json
+POST http://localhost:3000/api/payment/create
+Authorization: Bearer <customer-token>
+Content-Type: application/json
+
+{
+  "bookingId": "<booking-id>"
+}
+```
+Response akan berisi `token` dan `redirect_url` untuk membuka Midtrans payment di WebView
+
+### 2.11 Cek Status Payment
+```json
+GET http://localhost:3000/api/payment/status/<booking-id>
+Authorization: Bearer <customer-token>
+```
+
+### 2.12 Lihat Riwayat Payment
+```json
+GET http://localhost:3000/api/payment/history
+Authorization: Bearer <customer-token>
+```
+Optional: Filter payment untuk booking tertentu
+```json
+GET http://localhost:3000/api/payment/history?bookingId=<booking-id>
+Authorization: Bearer <customer-token>
+```
+
 ---
 
 ## 3. Admin Journey

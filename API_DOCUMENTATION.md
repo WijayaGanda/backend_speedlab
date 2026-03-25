@@ -623,6 +623,99 @@ Mengembalikan jumlah booking berdasarkan status:
 
 ---
 
+### 8. Payment / Pembayaran (`/api/payment`)
+
+**PENTING**: Integrasi dengan Midtrans Payment Gateway
+
+#### Create Payment (Customer/Admin)
+```http
+POST /api/payment/create
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "bookingId": "6789abc123def456"
+}
+```
+Response:
+```json
+{
+  "success": true,
+  "token": "66e4fa55-fdac-4ef9-91b5-733b5b26xxxx",
+  "redirect_url": "https://app.sandbox.midtrans.com/snap/v3/redirection/66e4fa55-fdac-xxx"
+}
+```
+**Note:**
+- Customer hanya bisa membayar booking miliknya sendiri
+- Admin bisa membayar booking siapa saja
+- `grossAmount` diambil otomatis dari `booking.totalPrice` di database (KEAMANAN)
+- Jika sudah ada payment pending untuk booking ini, akan return token yang lama
+- Gunakan `redirect_url` untuk membuka WebView pembayaran Midtrans di Flutter
+
+#### Check Payment Status (Customer/Admin)
+```http
+GET /api/payment/status/:bookingId
+Authorization: Bearer <token>
+```
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "orderId": "SPEEDLAB-6789abc123def456-1234567890",
+    "bookingId": "6789abc123def456",
+    "grossAmount": 150000,
+    "transactionStatus": "settlement",
+    "paymentType": "bank_transfer",
+    "snapToken": "66e4fa55-fdac-4ef9-91b5-733b5b26xxxx",
+    "snapRedirectUrl": "https://app.sandbox.midtrans.com/snap/v3/redirection/...",
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:35:00.000Z"
+  }
+}
+```
+**Transaction Status:**
+- `pending` - Menunggu pembayaran
+- `settlement` - Pembayaran berhasil (LUNAS)
+- `cancel` - Dibatalkan
+- `expire` - Kadaluarsa
+- `deny` - Ditolak
+
+**Note:**
+- Endpoint ini akan fetch status terbaru dari Midtrans API
+- Customer hanya bisa cek payment miliknya sendiri
+- Status booking akan otomatis berubah jadi "Terverifikasi" jika payment settlement
+
+#### Get Payment History (Customer/Admin)
+```http
+GET /api/payment/history
+Authorization: Bearer <token>
+```
+Query params (optional):
+- `bookingId=abc123` - filter payment untuk booking tertentu
+
+Contoh:
+- Semua payment: `GET /api/payment/history`
+- Payment booking tertentu: `GET /api/payment/history?bookingId=6789abc123def456`
+
+**Note:**
+- Customer: Hanya melihat riwayat payment miliknya sendiri
+- Admin/Pemilik: Melihat semua riwayat payment
+- Response include `count` untuk jumlah total payment
+
+#### Webhook Midtrans (Internal)
+```http
+POST /api/payment/webhook
+Content-Type: application/json
+```
+**Note:**
+- Endpoint ini khusus dipanggil oleh Midtrans (TIDAK PERLU AUTH)
+- Digunakan untuk update status payment otomatis
+- Menggunakan signature validation untuk keamanan
+- Konfigurasi webhook URL di Midtrans Dashboard: `https://your-domain.com/api/payment/webhook`
+
+---
+
 ## 🚀 Cara Menjalankan
 
 1. Install dependencies:
@@ -650,6 +743,11 @@ Server akan berjalan di `http://localhost:3000`
 3. **Real-time Status**: Update status motor menggunakan endpoint PATCH `/api/motorcycles/:id/status`
 4. **Grafik**: Gunakan endpoint `/stats/summary` untuk mendapatkan data grafik
 5. **Error Handling**: Semua response memiliki field `success` untuk cek berhasil/gagal
+6. **Payment Integration**: 
+   - Gunakan WebView untuk membuka `redirect_url` dari Midtrans
+   - Setelah payment selesai, user akan di-redirect kembali ke app
+   - Gunakan endpoint `/api/payment/status/:bookingId` untuk refresh status payment
+   - Status booking akan otomatis berubah jadi "Terverifikasi" setelah payment settlement
 
 ---
 
@@ -658,15 +756,18 @@ Server akan berjalan di `http://localhost:3000`
 ### Customer Flow:
 1. Register/Login → Dapat token
 2. Daftar motor (bisa lebih dari satu)
-3. Buat reservasi
-4. Lihat status motor
-5. Lihat riwayat servis
-6. Klaim garansi (jika diperlukan)
+3. Buat reservasi/booking
+4. **Bayar booking via Midtrans** (Gopay, Bank Transfer, dll)
+5. Booking otomatis terverifikasi setelah payment settlement
+6. Lihat status motor (real-time tracking)
+7. Lihat riwayat servis
+8. Klaim garansi (jika diperlukan)
+9. Lihat riwayat pembayaran
 
 ### Admin Flow:
 1. Login dengan role admin
 2. Lihat booking hari ini (filtered & FIFO)
-3. Verifikasi reservasi
+3. Verifikasi reservasi (otomatis jika sudah bayar)
 4. Update status motor saat pengerjaan
 5. Buat service history
 6. Kelola data motor, layanan, pelanggan

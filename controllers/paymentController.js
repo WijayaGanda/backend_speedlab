@@ -1,9 +1,16 @@
 const midtransClient = require('midtrans-client');
+const crypto = require('crypto');
 const Payment = require('../model/PaymentModel');
 const Booking = require('../model/BookingModel'); 
 
 // Inisialisasi Midtrans Snap
 const snap = new midtransClient.Snap({
+    isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
+    serverKey: process.env.MIDTRANS_SERVER_KEY
+});
+
+// Inisialisasi Core API untuk check status
+const coreApi = new midtransClient.CoreApi({
     isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
     serverKey: process.env.MIDTRANS_SERVER_KEY
 });
@@ -22,6 +29,11 @@ exports.createPayment = async (req, res) => {
         
         if (!booking) {
             return res.status(404).json({ success: false, message: "Data Booking tidak ditemukan" });
+        }
+
+        // Validasi: Customer hanya bisa membayar booking miliknya sendiri
+        if (req.user.role === 'pelanggan' && booking.userId._id.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, message: "Anda hanya bisa membayar booking milik Anda sendiri" });
         }
 
         // 2. Cegah double payment: Cek apakah sudah ada payment yang sukses/pending untuk booking ini
@@ -93,6 +105,15 @@ exports.createPayment = async (req, res) => {
 
 exports.handleWebhook = async (req, res) => {
     try {
+        // Validasi signature dari Midtrans untuk keamanan
+        const { order_id, status_code, gross_amount, signature_key } = req.body;
+        const serverKey = process.env.MIDTRANS_SERVER_KEY;
+        const hash = crypto.createHash('sha512').update(`${order_id}${status_code}${gross_amount}${serverKey}`).digest('hex');
+        
+        if (signature_key !== hash) {
+            return res.status(401).json({ message: "Invalid signature" });
+        }
+
         const notification = await snap.transaction.notification(req.body);
 
         const orderId = notification.order_id;
@@ -132,5 +153,112 @@ exports.handleWebhook = async (req, res) => {
     } catch (error) {
         console.error("Webhook Error:", error);
         res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+
+// Check Payment Status (untuk customer refresh status di app)
+exports.checkPaymentStatus = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+
+        // Cari payment berdasarkan bookingId
+        const payment = await Payment.findOne({ bookingId })
+            .populate('bookingId')
+            .populate('userId', 'name email');
+
+        if (!payment) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Payment tidak ditemukan" 
+            });
+        }
+
+        // Validasi: Customer hanya bisa cek payment miliknya sendiri
+        if (req.user.role === 'pelanggan' && payment.userId._id.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Anda hanya bisa melihat payment milik Anda sendiri" 
+            });
+        }
+
+        // Ambil status terbaru dari Midtrans
+        try {
+            const statusResponse = await coreApi.transaction.status(payment.orderId);
+            
+            // Update status di database jika ada perubahan
+            if (statusResponse.transaction_status !== payment.transactionStatus) {
+                payment.transactionStatus = statusResponse.transaction_status;
+                payment.paymentType = statusResponse.payment_type || payment.paymentType;
+                await payment.save();
+
+                // Update booking status jika payment settlement
+                if (statusResponse.transaction_status === 'settlement') {
+                    await Booking.findByIdAndUpdate(payment.bookingId, {
+                        status: 'Terverifikasi'
+                    });
+                }
+            }
+        } catch (midtransError) {
+            console.error('Error fetching from Midtrans:', midtransError);
+            // Tetap return data dari database jika Midtrans error
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                orderId: payment.orderId,
+                bookingId: payment.bookingId._id,
+                grossAmount: payment.grossAmount,
+                transactionStatus: payment.transactionStatus,
+                paymentType: payment.paymentType,
+                snapToken: payment.snapToken,
+                snapRedirectUrl: payment.snapRedirectUrl,
+                createdAt: payment.createdAt,
+                updatedAt: payment.updatedAt
+            }
+        });
+
+    } catch (error) {
+        console.error("Check Payment Status Error:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Gagal mengecek status pembayaran" 
+        });
+    }
+};
+
+// Get Payment History (untuk customer lihat riwayat pembayaran)
+exports.getPaymentHistory = async (req, res) => {
+    try {
+        let query = {};
+
+        // Optional: Filter berdasarkan bookingId jika disediakan
+        if (req.query.bookingId) {
+            query.bookingId = req.query.bookingId;
+        }
+
+        // Jika customer, hanya tampilkan payment miliknya
+        if (req.user.role === 'pelanggan') {
+            query.userId = req.user._id;
+        }
+        // Admin bisa lihat semua payment history
+
+        const payments = await Payment.find(query)
+            .populate('bookingId', 'bookingDate bookingTime status totalPrice')
+            .populate('userId', 'name email phone')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            success: true,
+            count: payments.length,
+            data: payments
+        });
+
+    } catch (error) {
+        console.error("Get Payment History Error:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Gagal mengambil riwayat pembayaran" 
+        });
     }
 };
