@@ -65,6 +65,84 @@ Content-Type: application/json
 }
 ```
 
+#### Forgot Password
+```http
+POST /api/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "john@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Link reset password telah dikirim ke email Anda",
+  "data": {
+    "resetToken": "abc123def456...",
+    "expiresIn": "1 jam"
+  }
+}
+```
+
+**Notes:**
+- Email harus terdaftar di sistem
+- Token reset berlaku selama 1 jam
+- Di production, link reset akan dikirim via email (untuk sekarang token di-return untuk testing)
+
+#### Reset Password
+```http
+POST /api/auth/reset-password
+Content-Type: application/json
+
+{
+  "token": "abc123def456...",
+  "newPassword": "passwordBaru123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Password berhasil direset, silakan login dengan password baru"
+}
+```
+
+**Notes:**
+- Token harus valid dan belum expired (maksimal 1 jam)
+- Password minimal 6 karakter
+- Setelah reset, user dapat login dengan password baru
+
+#### Change Password (Authenticated User)
+```http
+PUT /api/auth/change-password
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "currentPassword": "passwordLama123",
+  "newPassword": "passwordBaru123",
+  "confirmPassword": "passwordBaru123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Password berhasil diubah"
+}
+```
+
+**Notes:**
+- User harus sudah login (memerlukan token JWT)
+- Password saat ini harus benar untuk verifikasi
+- Password baru harus sesuai dengan konfirmasi password
+- Password minimal 6 karakter
+
 ---
 
 ### 2. Motorcycles (`/api/motorcycles`)
@@ -212,6 +290,256 @@ Authorization: Bearer <token>
 
 ---
 
+## 📊 BOOKING & SERVICE HISTORY FLOW
+
+### 🎯 Design Decision: Kenapa Pisah (Tidak Digabung)?
+
+**❌ Jika Digabung (1 Collection):**
+```
+MASALAH:
+├─ Booking mulai: serviceIds = [Ganti Oli, Ganti Filter]
+│                totalPrice = 150,000
+│
+└─ Setelah dikerjakan: 
+   ├─ Mekanik nemu kampas rem juga habis (tambah 75,000)
+   ├─ spareParts berubah (tambah data baru)
+   ├─ diagnosis berubah
+   ├─ workDone berubah
+   ├─ totalPrice jadi 225,000
+   └─ 👎 Booking data sudah berubah drastis = confusing!
+```
+
+**✅ Jika Pisah (2 Collection - CURRENT DESIGN):**
+```
+KEUNTUNGAN:
+├─ Booking tetap: serviceIds & totalPrice ORIGINAL (150,000)
+│  └─ Ini adalah commitment/agree customer
+│
+├─ Service History: catatan ACTUAL pengerjaan
+│  ├─ serviceIds = [Ganti Oli, Ganti Filter, Ganti Kampas Rem]
+│  ├─ spareParts = [dengan detail harga]
+│  ├─ totalPrice ACTUAL = 225,000
+│  └─ Ini adalah HASIL akhir setelah dikerjakan
+│
+└─ 👍 Audit trail jelas, data konsisten, laporan akurat!
+```
+
+### 📋 Penjelasan Detail Booking vs Service History:
+
+| Aspek | Booking | Service History |
+|-------|---------|-----------------|
+| **Tujuan** | Request/Permintaan servis | Catatan riwayat pengerjaan |
+| **Dibuat oleh** | Customer | Admin (setelah booking selesai) |
+| **Kapan dibuat** | Awal (customer request) | Akhir (setelah motor dikerjakan) |
+| **Bisa diubah** | Ya (sebelum dikerjakan) | Kadang (untuk koreksi data) |
+| **Harga** | Harga ESTIMATE awal | Harga ACTUAL (bisa lebih tinggi) |
+| **Suku cadang** | Tidak tercatat detail | Tercatat detail (nama, harga, qty) |
+| **Status flow** | Menunggu → Terverifikasi → Sedang Dikerjakan → Selesai → Diambil | Satu data saja (hasil final) |
+| **Untuk customer** | Lihat booking mereka | Lihat history pengerjaan motor mereka |
+| **Untuk admin** | Kelola queue pengerjaan | Lihat detail pengerjaan & garansi |
+| **Data audit** | Tracking permintaan | Tracking pekerjaan & biaya |
+
+### 💡 Skenario Harga Berubah (Contoh Real):
+
+```
+KASUS: Motor dibawa ke bengkel dengan keluhan "Mesin kasar"
+═══════════════════════════════════════════════════════════════
+
+BOOKING (Customer request):
+{
+  "motorcycleId": "motor123",
+  "serviceIds": ["service_ganti_oli"],
+  "bookingDate": "2024-01-15",
+  "totalPrice": 150000,  ← ESTIMATE awal
+  "complaint": "Mesin kasar"
+}
+
+[Admin proses...]
+[Mekanik mulai kerja...]
+
+TERNYATA MEKANIK NEMU:
+- Oli kotor ✓ (sesuai estimate)
+- Filter udara tersumbat (tambah 50,000)
+- Kampas rem habis (tambah 75,000)
+- Busi perlu diganti (tambah 60,000)
+
+SERVICE HISTORY (Hasil pengerjaan):
+{
+  "bookingId": "booking123",  ← Link ke booking original
+  "diagnosis": "Oli kotor, filter tersumbat, kampas rem habis, busi usia",
+  "workDone": "Ganti oli, filter udara, kampas rem, busi",
+  "spareParts": [
+    { name: "Oli SAE 40", price: 50000, quantity: 1 },
+    { name: "Filter Udara", price: 50000, quantity: 1 },
+    { name: "Kampas Rem", price: 75000, quantity: 1 },
+    { name: "Busi", price: 60000, quantity: 1 }
+  ],
+  "mechanicName": "Budi",
+  "startDate": "2024-01-15T10:00:00",
+  "endDate": "2024-01-15T14:00:00",
+  "totalPrice": 335000,  ← ACTUAL harga (lebih tinggi)
+  "warrantyExpiry": "2024-04-15"
+}
+
+HASIL:
+✓ Booking original tetap clean (150,000)
+✓ Service history akurat (335,000)
+✓ Customer bisa lihat detail apa yg ditambahkan
+✓ Admin punya catatan untuk next maintenance
+═══════════════════════════════════════════════════════════════
+```
+
+### 🔄 Alur Booking dan Service History:
+
+```
+BOOKING FLOW + PROGRESS UPDATE:
+═══════════════════════════════════════════════════════════════
+
+1. CUSTOMER MEMBUAT BOOKING
+   ↓
+   Status Booking: "Menunggu Verifikasi"
+   - Customer memilih motor, layanan, jam, komplain
+   
+   ↓
+   
+2. ADMIN VERIFIKASI BOOKING
+   ↓
+   Status Booking: "Terverifikasi"
+   - Admin menerima dan memverifikasi booking
+   
+   ↓
+   
+3. ADMIN UPDATE KE "SEDANG DIKERJAKAN"
+   ↓
+   Status Booking: "Sedang Dikerjakan"
+   - Mekanik mulai mengerjakan motor
+   
+   ✨ BARU: BUAT SERVICE HISTORY SEKARANG ✨
+   ↓
+   Admin membuat service history:
+   POST /api/service-histories
+   {
+     "bookingId": "...",
+     "diagnosis": "Awal diagnosis", (optional, bisa diisi nanti)
+     "mechanicName": "Budi",
+     "startDate": "2024-01-15T10:00:00"
+   }
+   
+   Status Service History: "Dimulai"
+   └─ Customer sudah bisa melihat: motor sedang dikerjakan, mekanik siapa
+   
+   ↓
+   
+4. ✨ ADMIN UPDATE PROGRESS BERKALA ✨
+   ↓
+   Motor sedang dikerjakan:
+   PUT /api/service-histories/:id
+   {
+     "status": "Sedang Dikerjakan",
+     "diagnosis": "Oli kotor, ditemukan kampas rem juga habis",
+     "workDone": "Sudah ganti oli, sedang ganti kampas rem",
+     "spareParts": [
+       { "name": "Oli SAE 40", "price": 50000, "quantity": 1 },
+       { "name": "Kampas Rem", "price": 75000, "quantity": 1 }
+     ],
+     "totalPrice": 125000
+   }
+   
+   Customer bisa lihat REAL-TIME:
+   ✓ Yang sudah dikerjakan
+   ✓ Suku cadang apa saja yang digunakan + harga
+   ✓ Estimasi total harga
+   ✓ Siapa mekaniknya
+   
+   ↓
+   
+5. MOTOR SELESAI DIKERJAKAN
+   ↓
+   Status Booking: "Selesai"
+   Admin final update service history:
+   PUT /api/service-histories/:id
+   {
+     "status": "Selesai",
+     "endDate": "2024-01-15T14:00:00",
+     "totalPrice": 275000,
+     "warrantyExpiry": "2024-04-15",
+     "notes": "Motor sudah selesai dikerjakan, silakan diambil"
+   }
+   
+   ↓
+   
+6. CUSTOMER AMBIL MOTOR
+   ↓
+   Status Booking: "Diambil"
+   - Service history complete dengan detail pengerjaan & garansi
+   - Customer bisa lihat full history di app
+
+═══════════════════════════════════════════════════════════════
+```
+
+### 📱 Customer Progress Tracking (Real-Time):
+
+```
+Customer interface:
+┌─────────────────────────────────────────────┐
+│ BOOKING #123                                │
+├─────────────────────────────────────────────┤
+│ Status: Sedang Dikerjakan                   │
+│                                             │
+│ 🔧 PROGRESS PENGERJAAN:                    │
+│                                             │
+│ Mekanik: Budi                               │
+│ Mulai: 2024-01-15 10:00 WIB                 │
+│                                             │
+│ Diagnosis:                                  │
+│ Oli kotor, filter tersumbat,                │
+│ kampas rem habis, busi usia                 │
+│                                             │
+│ Work Done:                                  │
+│ ✓ Ganti oli                                 │
+│ ✓ Ganti filter udara                        │
+│ ⏱️ Sedang: Ganti kampas rem                  │
+│ → Pending: Ganti busi                       │
+│                                             │
+│ Suku Cadang:                                │
+│ • Oli SAE 40 - Rp 50.000 (1x)              │
+│ • Filter Udara - Rp 50.000 (1x)            │
+│ • Kampas Rem - Rp 75.000 (1x)              │
+│ • Busi - Rp 60.000 (1x)                    │
+│                                             │
+│ 💰 Total Estimasi: Rp 235.000              │
+│ (Final ketika selesai)                      │
+│                                             │
+│ last updated: 30 detik lalu                 │
+└─────────────────────────────────────────────┘
+```
+
+### ✅ Rekomendasi & Best Practice:
+
+**DENGAN PROGRESS TRACKING:**
+1. ✓ **Real-time progress** - Customer bisa lihat what's happening now
+2. ✓ **Transparent updates** - Admin update diagnosis & spareParts sambil dikerjakan
+3. ✓ **Incremental cost tracking** - Customer lihat harga bertambah saat ada part baru
+4. ✓ **Flexible pricing** - Service history totalPrice bisa updated berkali-kali sampai final
+5. ✓ **Complete audit** - Setiap update di-track dengan timestamp
+
+**Cara implementasi:**
+
+| Tahap | Aksi | API |
+|-------|------|-----|
+| **Booking Terverifikasi** | Admin siap kerja | - |
+| **Status → Sedang Dikerjakan** | Admin buat service history | `POST /api/service-histories` |
+| **Mekanik mulai kerja** | Admin update: mekanik, startDate | `PUT /api/service-histories/:id` |
+| **Proses berlangsung** | Admin update: diagnosis, workDone, spareParts, totalPrice (berkali-kali) | `PUT /api/service-histories/:id` (berkali-kali) |
+| **Motor selesai** | Admin update: status="Selesai", endDate, totalPrice final, warrantyExpiry | `PUT /api/service-histories/:id` |
+| **Customer ambil** | Status booking → "Diambil" | - |
+
+**API yang digunakan customer:**
+- `GET /api/service-histories/my-history` → Lihat progress real-time
+- `GET /api/service-histories/motorcycle/:motorcycleId` → History per motor
+
+---
+
 ### 4. Bookings / Reservasi (`/api/bookings`)
 
 #### Create Booking (Customer)
@@ -323,7 +651,7 @@ Authorization: Bearer <token>
 
 ### 5. Service History / Riwayat Servis (`/api/service-histories`)
 
-#### Create Service History (Admin)
+#### Create Service History (Admin) - Saat Booking "Sedang Dikerjakan"
 ```http
 POST /api/service-histories
 Authorization: Bearer <token>
@@ -331,26 +659,116 @@ Content-Type: application/json
 
 {
   "bookingId": "booking_id_123",
-  "diagnosis": "Kampas rem habis, oli kotor",
-  "workDone": "Ganti kampas rem, ganti oli",
+  "mechanicName": "Budi",
+  "startDate": "2024-01-15T10:00:00",
+  "diagnosis": "Mekanik akan mulai diagnostic", // optional, bisa diisi nanti
+  "notes": "Mulai pengerjaan"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Riwayat servis berhasil dibuat",
+  "data": {
+    "_id": "history123",
+    "bookingId": "booking_id_123",
+    "status": "Dimulai",
+    "mechanicName": "Budi",
+    "startDate": "2024-01-15T10:00:00",
+    "diagnosis": null,
+    "workDone": null,
+    "spareParts": [],
+    "totalPrice": 0,
+    "createdAt": "2024-01-15T10:00:00.000Z"
+  }
+}
+```
+
+**Notes:**
+- Hanya bisa dibuat ketika booking status = "Sedang Dikerjakan" atau "Selesai"
+- 1 booking = 1 service history (tidak bisa buat lebih dari 1 untuk booking yg sama)
+- Field `diagnosis`, `workDone`, `spareParts`, `totalPrice` bisa diisi nanti saat update
+- Status service history default = "Dimulai"
+
+#### Update Service History (Admin) - Untuk Progress Update
+```http
+PUT /api/service-histories/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "status": "Sedang Dikerjakan",
+  "diagnosis": "Oli kotor, filter tersumbat, kampas rem habis, busi usia",
+  "workDone": "Sudah ganti oli & filter, sedang ganti kampas rem",
   "spareParts": [
+    {
+      "name": "Oli SAE 40",
+      "price": 50000,
+      "quantity": 1
+    },
+    {
+      "name": "Filter Udara",
+      "price": 50000,
+      "quantity": 1
+    },
     {
       "name": "Kampas Rem",
       "price": 75000,
       "quantity": 1
     },
     {
-      "name": "Oli Mesin",
-      "price": 50000,
+      "name": "Busi",
+      "price": 60000,
       "quantity": 1
     }
   ],
-  "mechanicName": "Budi",
-  "startDate": "2024-01-15T10:00:00",
-  "endDate": "2024-01-15T12:00:00",
-  "totalPrice": 275000,
+  "totalPrice": 235000,
+  "notes": "Proses berjalan lancar"
+}
+```
+
+**Notes:**
+- Bisa dipanggil berkali-kali untuk update progress
+- Customer bisa melihat update ini real-time
+- Kirim hanya field yang ingin diupdate (tidak perlu semua)
+
+#### Update Service History (Admin) - Final Status "Selesai"
+```http
+PUT /api/service-histories/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "status": "Selesai",
+  "endDate": "2024-01-15T14:00:00",
+  "totalPrice": 275000, // Final price (bisa berbeda dari estimate)
   "warrantyExpiry": "2024-04-15",
-  "notes": "Motor sudah selesai dikerjakan"
+  "notes": "Motor sudah selesai dikerjakan, silakan diambil"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Riwayat servis berhasil diupdate",
+  "data": {
+    "_id": "history123",
+    "bookingId": "booking_id_123",
+    "status": "Selesai",
+    "mechanicName": "Budi",
+    "startDate": "2024-01-15T10:00:00",
+    "endDate": "2024-01-15T14:00:00",
+    "diagnosis": "Oli kotor, filter tersumbat, kampas rem habis, busi usia",
+    "workDone": "Ganti oli, filter udara, kampas rem, busi",
+    "spareParts": [...],
+    "totalPrice": 275000,
+    "warrantyExpiry": "2024-04-15",
+    "notes": "Motor sudah selesai dikerjakan, silakan diambil",
+    "updatedAt": "2024-01-15T14:00:00.000Z"
+  }
 }
 ```
 
@@ -359,6 +777,8 @@ Content-Type: application/json
 GET /api/service-histories/my-history
 Authorization: Bearer <token>
 ```
+
+**Purpose:** Customer lihat history pengerjaan motor mereka dengan LIVE PROGRESS
 
 #### Get Service History by Motorcycle
 ```http
@@ -376,20 +796,6 @@ Authorization: Bearer <token>
 ```http
 GET /api/service-histories/:id
 Authorization: Bearer <token>
-```
-
-#### Update Service History (Admin)
-```http
-PUT /api/service-histories/:id
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "diagnosis": "Updated diagnosis",
-  "workDone": "Updated work",
-  "totalPrice": 300000,
-  "notes": "Updated notes"
-}
 ```
 
 #### Delete Service History (Admin)

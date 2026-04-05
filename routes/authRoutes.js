@@ -7,7 +7,8 @@ const {
   getProfile, 
   updateProfile,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  changePassword
 } = require("../controllers/authController");
 const { authenticate } = require("../middleware/auth");
 
@@ -21,5 +22,6 @@ router.post("/reset-password", resetPassword);
 // Protected routes
 router.get("/profile", authenticate, getProfile);
 router.put("/profile", authenticate, updateProfile);
+router.put("/change-password", authenticate, changePassword);
 
 module.exports = router;

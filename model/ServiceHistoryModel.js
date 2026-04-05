@@ -4,7 +4,8 @@ const serviceHistorySchema = new mongoose.Schema({
   bookingId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "Booking", 
-    required: true 
+    required: true,
+    unique: true // 1 booking = 1 service history
   },
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -22,6 +23,11 @@ const serviceHistorySchema = new mongoose.Schema({
   }],
   complaint: { 
     type: String 
+  },
+  status: {
+    type: String,
+    enum: ['Dimulai', 'Sedang Dikerjakan', 'Selesai'],
+    default: 'Dimulai'
   },
   diagnosis: { 
     type: String 
@@ -45,7 +51,7 @@ const serviceHistorySchema = new mongoose.Schema({
   },
   totalPrice: { 
     type: Number, 
-    required: true 
+    default: 0
   },
   warrantyExpiry: { 
     type: Date 
@@ -54,6 +60,10 @@ const serviceHistorySchema = new mongoose.Schema({
     type: String 
   },
   createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
     type: Date, 
     default: Date.now 
   }

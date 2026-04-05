@@ -384,6 +384,70 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// Change Password - Update password untuk authenticated user
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    // Validasi input
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Password saat ini, password baru, dan konfirmasi diperlukan" 
+      });
+    }
+
+    // Validasi password baru dan konfirmasi cocok
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Password baru dan konfirmasi tidak cocok" 
+      });
+    }
+
+    // Validasi panjang password
+    if (newPassword.length < 6) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Password minimal 6 karakter" 
+      });
+    }
+
+    // Cek password saat ini
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: "User tidak ditemukan" 
+      });
+    }
+
+    // Validasi password saat ini (plain text - sesuai dengan pattern yang ada)
+    if (user.password !== currentPassword) {
+      return res.status(401).json({ 
+        success: false,
+        message: "Password saat ini tidak benar" 
+      });
+    }
+
+    // Update password baru
+    user.password = newPassword;
+    user.updatedAt = Date.now();
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password berhasil diubah"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      message: "Error saat mengubah password", 
+      error: error.message 
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -391,5 +455,6 @@ module.exports = {
   getProfile,
   updateProfile,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  changePassword
 };

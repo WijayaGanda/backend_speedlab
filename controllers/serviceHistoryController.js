@@ -1,7 +1,7 @@
 const ServiceHistory = require("../model/ServiceHistoryModel");
 const Booking = require("../model/BookingModel");
 
-// Create - Tambah riwayat servis
+// Create - Tambah riwayat servis (bisa saat "Sedang Dikerjakan" atau "Selesai")
 const createServiceHistory = async (req, res) => {
   try {
     const { 
@@ -11,9 +11,7 @@ const createServiceHistory = async (req, res) => {
       spareParts, 
       mechanicName, 
       startDate, 
-      endDate, 
       totalPrice, 
-      warrantyExpiry, 
       notes 
     } = req.body;
 
@@ -29,20 +27,36 @@ const createServiceHistory = async (req, res) => {
       });
     }
 
+    // Validasi booking status harus "Sedang Dikerjakan" atau "Selesai"
+    if (!['Sedang Dikerjakan', 'Selesai'].includes(booking.status)) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Service history hanya bisa dibuat saat booking status 'Sedang Dikerjakan' atau 'Selesai'" 
+      });
+    }
+
+    // Cek apakah sudah ada service history untuk booking ini
+    const existingHistory = await ServiceHistory.findOne({ bookingId });
+    if (existingHistory) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Service history untuk booking ini sudah ada, gunakan update untuk mengubahnya" 
+      });
+    }
+
     const serviceHistory = new ServiceHistory({
       bookingId,
       userId: booking.userId,
       motorcycleId: booking.motorcycleId._id,
       serviceIds: booking.serviceIds,
       complaint: booking.complaint,
+      status: 'Dimulai',
       diagnosis,
       workDone,
       spareParts,
       mechanicName,
       startDate,
-      endDate,
-      totalPrice,
-      warrantyExpiry,
+      totalPrice: totalPrice || 0,
       notes
     });
 
@@ -56,7 +70,7 @@ const createServiceHistory = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "Riwayat servis berhasil ditambahkan",
+      message: "Riwayat servis berhasil dibuat",
       data: populatedHistory
     });
   } catch (error) {
@@ -167,10 +181,11 @@ const getServiceHistoryById = async (req, res) => {
   }
 };
 
-// Update - Update service history
+// Update - Update service history (untuk progress update)
 const updateServiceHistory = async (req, res) => {
   try {
     const { 
+      status,
       diagnosis, 
       workDone, 
       spareParts, 
@@ -182,25 +197,7 @@ const updateServiceHistory = async (req, res) => {
       notes 
     } = req.body;
 
-    const history = await ServiceHistory.findByIdAndUpdate(
-      req.params.id,
-      { 
-        diagnosis, 
-        workDone, 
-        spareParts, 
-        mechanicName, 
-        startDate, 
-        endDate, 
-        totalPrice, 
-        warrantyExpiry, 
-        notes 
-      },
-      { new: true }
-    )
-      .populate('userId', 'name email phone')
-      .populate('motorcycleId')
-      .populate('serviceIds')
-      .populate('bookingId');
+    const history = await ServiceHistory.findById(req.params.id);
 
     if (!history) {
       return res.status(404).json({ 
@@ -209,10 +206,32 @@ const updateServiceHistory = async (req, res) => {
       });
     }
 
+    // Update fields
+    if (status) history.status = status;
+    if (diagnosis !== undefined) history.diagnosis = diagnosis;
+    if (workDone !== undefined) history.workDone = workDone;
+    if (spareParts !== undefined) history.spareParts = spareParts;
+    if (mechanicName !== undefined) history.mechanicName = mechanicName;
+    if (startDate !== undefined) history.startDate = startDate;
+    if (endDate !== undefined) history.endDate = endDate;
+    if (totalPrice !== undefined) history.totalPrice = totalPrice;
+    if (warrantyExpiry !== undefined) history.warrantyExpiry = warrantyExpiry;
+    if (notes !== undefined) history.notes = notes;
+    
+    history.updatedAt = Date.now();
+
+    await history.save();
+
+    const updatedHistory = await ServiceHistory.findById(history._id)
+      .populate('userId', 'name email phone')
+      .populate('motorcycleId')
+      .populate('serviceIds')
+      .populate('bookingId');
+
     res.status(200).json({
       success: true,
       message: "Riwayat servis berhasil diupdate",
-      data: history
+      data: updatedHistory
     });
   } catch (error) {
     res.status(500).json({ 
