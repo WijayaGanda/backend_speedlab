@@ -786,6 +786,46 @@ GET /api/service-histories/motorcycle/:motorcycleId
 Authorization: Bearer <token>
 ```
 
+#### Get Service History by Booking ID
+```http
+GET /api/service-histories/booking/:bookingId
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "history123",
+    "bookingId": "booking_id_123",
+    "userId": "user_id_456",
+    "motorcycleId": "motor_id_789",
+    "status": "Selesai",
+    "mechanicName": "Budi",
+    "startDate": "2024-01-15T10:00:00",
+    "endDate": "2024-01-15T14:00:00",
+    "diagnosis": "Oli kotor, filter tersumbat, kampas rem habis",
+    "workDone": "Ganti oli, filter udara, kampas rem",
+    "spareParts": [
+      { "name": "Oli SAE 40", "price": 50000, "quantity": 1 },
+      { "name": "Filter Udara", "price": 50000, "quantity": 1 },
+      { "name": "Kampas Rem", "price": 75000, "quantity": 1 }
+    ],
+    "totalPrice": 175000,
+    "warrantyExpiry": "2024-04-15",
+    "notes": "Motor sudah selesai dikerjakan",
+    "createdAt": "2024-01-15T10:00:00.000Z",
+    "updatedAt": "2024-01-15T14:00:00.000Z"
+  }
+}
+```
+
+**Notes:**
+- Mengembalikan service history untuk booking ID tertentu
+- Hanya ada 1 service history per booking (unique constraint)
+- Endpoint ini bisa digunakan customer untuk melihat detail progress service mereka berdasarkan booking ID
+
 #### Get All Service Histories (Admin/Pemilik)
 ```http
 GET /api/service-histories

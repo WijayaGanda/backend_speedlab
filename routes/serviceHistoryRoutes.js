@@ -6,6 +6,7 @@ const {
   getUserServiceHistories,
   getMotorcycleServiceHistories,
   getServiceHistoryById,
+  getServiceHistoryByBookingId,
   updateServiceHistory,
   deleteServiceHistory
 } = require("../controllers/serviceHistoryController");
@@ -17,6 +18,7 @@ router.use(authenticate);
 // Customer routes
 router.get("/my-history", authorize('pelanggan'), getUserServiceHistories);
 router.get("/motorcycle/:motorcycleId", getMotorcycleServiceHistories);
+router.get("/booking/:bookingId", getServiceHistoryByBookingId);
 
 // Admin routes
 router.get("/", authorize('admin', 'pemilik'), getAllServiceHistories);

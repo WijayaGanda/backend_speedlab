@@ -267,12 +267,44 @@ const deleteServiceHistory = async (req, res) => {
   }
 };
 
+// Read - Get service history by booking ID
+const getServiceHistoryByBookingId = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const history = await ServiceHistory.findOne({ bookingId })
+      .populate('userId', 'name email phone')
+      .populate('motorcycleId')
+      .populate('serviceIds')
+      .populate('bookingId');
+
+    if (!history) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Service history untuk booking ini tidak ditemukan" 
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: history
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      message: "Error mengambil riwayat servis", 
+      error: error.message 
+    });
+  }
+};
+
 module.exports = {
   createServiceHistory,
   getAllServiceHistories,
   getUserServiceHistories,
   getMotorcycleServiceHistories,
   getServiceHistoryById,
+  getServiceHistoryByBookingId,
   updateServiceHistory,
   deleteServiceHistory
 };
