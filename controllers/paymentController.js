@@ -55,8 +55,8 @@ exports.createPayment = async (req, res) => {
             return res.status(400).json({ success: false, message: "Booking ini sudah lunas!" });
         }
 
-        // 3. Ambil Harga ASLI dari database, BUKAN dari Flutter
-        const grossAmount = booking.totalPrice;
+        // 3. Set jumlah DP statis 50.00 untuk pembayaran down payment
+        const grossAmount = 50.00;
 
         // 4. Buat order_id unik untuk Midtrans
         const orderId = `SPEEDLAB-${booking._id}-${Date.now()}`;
