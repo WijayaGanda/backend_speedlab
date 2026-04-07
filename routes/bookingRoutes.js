@@ -10,7 +10,9 @@ const {
   updateBooking,
   deleteBooking,
   getBookingStats,
-  cancelBooking
+  cancelBooking,
+  getBookingsByDate,
+  getUserBookingsByDate
 } = require("../controllers/bookingController");
 const { authenticate, authorize } = require("../middleware/auth");
 
@@ -23,9 +25,11 @@ router.get("/stats/summary", authorize('admin', 'pemilik'), getBookingStats);
 // Customer routes
 router.post("/", authorize('pelanggan'), createBooking);
 router.get("/my-bookings", authorize('pelanggan'), getUserBookings);
+router.get("/my-bookings/by-date", authorize('pelanggan'), getUserBookingsByDate);
 router.patch("/:id/cancel", authorize('pelanggan'), cancelBooking);
 
 // Admin routes
+router.get("/by-date", authorize('admin', 'pemilik'), getBookingsByDate);
 router.get("/", authorize('admin', 'pemilik'), getAllBookings);
 router.get("/:id", getBookingById);
 router.patch("/:id/verify", authorize('admin'), verifyBooking);

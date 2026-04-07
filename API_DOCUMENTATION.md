@@ -1073,6 +1073,97 @@ Mengembalikan jumlah booking berdasarkan status:
 
 **PENTING**: Integrasi dengan Midtrans Payment Gateway
 
+---
+
+## 🔄 **ALUR PEMBAYARAN LENGKAP**
+
+### Diagram Alur Pembayaran:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ CUSTOMER CLICK BAYAR DI FLUTTER                         │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+                   ▼
+    ┌──────────────────────────────┐
+    │ 1. API Create Payment         │
+    │ POST /api/payment/create      │
+    │ {bookingId: "..."}            │
+    └──────────────┬───────────────┘
+                   │
+                   ▼
+    ┌──────────────────────────────┐
+    │ 2. Response dari Backend      │
+    │ {                             │
+    │   token: "...",               │
+    │   redirect_url: "http://..."  │
+    │ }                             │
+    └──────────────┬───────────────┘
+                   │
+                   ▼
+    ┌──────────────────────────────┐
+    │ 3. Buka WebView Midtrans      │
+    │ (Gunakan redirect_url)        │
+    │                               │
+    │ User pilih metode pembayaran: │
+    │ - Gopay                       │
+    │ - Transfer Bank               │
+    │ - BNPL (Kredivo, dll)         │
+    │ - Kartu Kredit                │
+    └──────────────┬───────────────┘
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+        ▼                     ▼
+    ✅ SUCCESS            ❌ GAGAL/BATAL
+        │                     │
+        │                     │
+    Redirect ke app      Redirect ke app
+        │                     │
+        ▼                     ▼
+┌────────────────────────────────────┐
+│ 4. App Check Status Payment        │
+│ GET /api/payment/status/booking... │
+│ (Optional: Polling setiap 2 detik) │
+└────────────┬─────────────────────┘
+             │
+             ▼
+    ┌─────────────────────┐
+    │ Cek transactionStatus│
+    └──────────┬──────────┘
+             │
+    ┌────────┴────────┐
+    │                 │
+    ▼                 ▼
+"settlement"      "pending"
+(LUNAS)          (Belum bayar)
+    │                 │
+    ▼                 ▼
+Update UI        Polling ulang
+& Booking        atau user
+status→           refresh
+"Terverifikasi"  manual
+    │
+    ▼
+✅ PEMBAYARAN BERHASIL
+```
+
+### Alur Detail:
+
+| No | Tahap | Endpoint | Metode | Status | Keterangan |
+|----|-------|----------|--------|--------|-----------|
+| 1 | Customer Buat Booking | POST /api/bookings | POST | "Menunggu Verifikasi" | Booking dibuat, belum ada pembayaran |
+| 2 | Customer Request Payment | POST /api/payment/create | POST | - | Backend generate token Midtrans |
+| 3 | Dapatkan Redirect URL | Response dari step 2 | - | - | Dapat `redirect_url` & `token` |
+| 4 | Buka Payment Gateway | WebView ke Midtrans | GET | - | User memilih & melakukan pembayaran |
+| 5 | Midtrans Proses | Internal Midtrans | - | pending/settlement | Midtrans menunggu konfirmasi bank/e-wallet |
+| 6 | Backend Menerima Webhook | POST /api/payment/webhook | POST | - | Midtrans notifikasi backend pembayaran |
+| 7 | Backend Update Status | Internal Update DB | - | settlement | Status booking → "Terverifikasi" |
+| 8 | App Check Status | GET /api/payment/status/:bookingId | GET | settlement | App confirm sudah bayar |
+| 9 | Show Confirmation | UI Update | - | "Terverifikasi" | Tampilkan konfirmasi pembayaran |
+
+---
+
 #### Create Payment (Customer/Admin)
 ```http
 POST /api/payment/create
@@ -1162,7 +1253,1226 @@ Content-Type: application/json
 
 ---
 
-## 🚀 Cara Menjalankan
+## 🔴 **TROUBLESHOOTING: Status Masih PENDING Padahal Sudah Bayar**
+
+### ❌ Masalah Umum:
+```
+Sudah bayar via Midtrans Simulator ✅
+Tapi status di database tetap "pending" ❌
+Padahal seharusnya berubah "settlement" ❌
+```
+
+### 🔍 Root Cause:
+
+**Webhook dari Midtrans TIDAK DITERIMA oleh backend server Anda!**
+
+```
+YANG TERJADI:
+1. ✅ User bayar di Midtrans Simulator
+2. ✅ Midtrans terima pembayaran (status = settlement di Midtrans)
+3. ❌ Midtrans coba send webhook ke backend
+4. ❌ Backend tidak menerima / webhook tidak configured
+5. ❌ Status di database tetap pending (tidak terupdate)
+```
+
+### ✅ Solusi:
+
+#### **Solusi 1: Setup Webhook di Midtrans Dashboard (RECOMMENDED)**
+
+**Step 1: Login ke Midtrans Dashboard**
+```
+Dashboard → Settings → Configuration
+```
+
+**Step 2: Scroll ke "Setting URL Endpoints"**
+
+Ada 5 field yang akan muncul:
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. Payment Notification URL*                   ★★★ DIISI │
+│    http://                                              │
+│    └─ https://your-domain.com/api/payment/webhook      │
+│                                                         │
+│ 2. Recurring Notification URL                  ☐ SKIP   │
+│    http://                                              │
+│    └─ (tidak perlu untuk sistem ini)                    │
+│                                                         │
+│ 3. Pay Account Notification URL                ☐ SKIP   │
+│    http://                                              │
+│    └─ (optional, untuk top-up wallet)                   │
+│                                                         │
+│ 4. Finish Redirect URL*                        ✓ OPSIONAL│
+│    http://                                              │
+│    └─ https://your-app.com/payment/finish             │
+│       (Redirect ke app jika payment berhasil)          │
+│                                                         │
+│ 5. Unfinish Redirect URL*                      ✓ OPSIONAL│
+│    http://                                              │
+│    └─ https://your-app.com/payment/unfinish           │
+│       (Redirect jika user klik back/cancel)            │
+└─────────────────────────────────────────────────────────┘
+```
+
+**YANG PENTING DIISI:**
+
+✅ **Field 1: Payment Notification URL** (WAJIB!)
+```
+https://your-domain.com/api/payment/webhook
+
+Contoh:
+├─ Local (dengan Ngrok): https://xxxxx.ngrok.io/api/payment/webhook
+├─ Production: https://speedlab.com/api/payment/webhook
+└─ Vercel: https://speedlab-app.vercel.app/api/payment/webhook
+```
+
+⚠️ **Field 4 & 5: Redirect URL** (Optional tapi recommended)
+```
+Finish Redirect URL: https://your-app.com/payment/success
+Unfinish Redirect URL: https://your-app.com/payment/cancel
+```
+
+❌ **Field 2 & 3: Jangan perlu diisi** (tidak untuk sistem ini)
+
+---
+
+**Step 3: Contoh Fill Lengkap**
+
+Jika menggunakan **Ngrok untuk local testing**:
+
+```
+Payment Notification URL:
+https://xxxxx.ngrok.io/api/payment/webhook
+│
+└─ Yang akan diterima backend di: POST /api/payment/webhook
+
+Finish Redirect URL: (optional)
+https://yourflutterapp.com/order/success
+
+Unfinish Redirect URL: (optional)
+https://yourflutterapp.com/order/cancel
+```
+
+Atau jika **production**:
+
+```
+Payment Notification URL:
+https://api.speedlab-workshop.com/api/payment/webhook
+
+Finish Redirect URL:
+https://speedlab-workshop.com/payment/success
+
+Unfinish Redirect URL:
+https://speedlab-workshop.com/payment/cancel
+```
+
+---
+
+**Step 4: Enable & Save**
+
+```
+Setelah isi semua field:
+1. Pastikan checkbox "HTTP POST notification to your Server" ☑️ ENABLED
+2. Click "UPDATE" atau "SAVE"
+3. Notification berhasil disimpan ✅
+```
+
+---
+
+**Step 5: Test Webhook**
+
+Setelah save, test dengan:
+
+```
+Opsi 1: Midtrans Notification Simulator
+├─ Dashboard → Developers → Notification Simulator
+├─ Input Order ID
+├─ Select "Settlement Test Case"
+└─ Send notification → Check backend logs
+
+Opsi 2: Direct POST dengan Postman/cURL
+├─ POST ke endpoint: http://localhost:3000/api/payment/webhook
+└─ Lihat response di terminal backend
+```
+
+---
+
+#### **Solusi 2: Gunakan Midtrans Notification Simulator (For Testing)**
+
+Jika webhook belum bisa ditest di local, gunakan simulator dari Midtrans:
+
+**Step 1: Buka Midtrans Notification Simulator**
+```
+Dashboard → Developers → Notification Simulator
+```
+
+**Step 2: Input Order ID**
+```
+Order ID: SPEEDLAB-{booking_id}-{timestamp}
+(Cari dari payment document di MongoDB)
+```
+
+**Step 3: Pilih Status**
+```
+┌─────────────────────────┐
+│ Settlement Test Case    │
+│ Capture Test Case       │
+│ Deny Test Case          │
+│ Pending Test Case       │
+└─────────────────────────┘
+```
+
+**Step 4: Send Notification**
+```
+➤ Click "Send" button
+```
+
+**Step 5: Check Database**
+```
+Status payment di MongoDB seharusnya berubah ke "settlement"
+Status booking seharusnya → "Terverifikasi"
+```
+
+---
+
+#### **Solusi 3: Polling Endpoint (Temporary Workaround)**
+
+Jika webhook belum bisa disetup, gunakan polling dari Flutter app:
+
+**Backend:** Sudah ada endpoint `/api/payment/status/:bookingId` yang fetch status terbaru dari Midtrans
+
+**Flutter:**
+```dart
+// Polling otomatis setiap 2 detik
+paymentService.pollPaymentStatus(
+  bookingId,
+  interval: const Duration(seconds: 2),
+  timeout: const Duration(minutes: 5),
+).listen((status) {
+  if (status.isSettled) {
+    print('✅ Payment confirmed via polling');
+    // Update UI
+  }
+});
+```
+
+**Keuntungan:** Real-time update tanpa webhook
+**Kekurangan:** Boros battery/data
+
+---
+
+### 🐛 **Debug Checklist:**
+
+```
+Webhook status masih pending? Check ini:
+
+1. ☐ Webhook URL sudah dikonfigurasi di Midtrans Dashboard?
+   └─ Settings → Configuration → Notification URL
+   
+2. ☐ URL webhook BENAR dan ACCESSIBLE dari internet?
+   └─ https://your-domain.com/api/payment/webhook
+   └─ BUKAN http://localhost:3000 (localhost tidak bisa diakses Midtrans)
+   
+3. ☐ "HTTP POST notification" sudah di-ENABLE?
+   └─ Dashboard → Settings → Notification Method
+   
+4. ☐ Backend sudah running?
+   └─ node server/server.js
+   
+5. ☐ Payment route sudah register?
+   └─ /api/payment/webhook endpoint sudah ada
+   
+6. ☐ Environment variables sudah set?
+   └─ MIDTRANS_SERVER_KEY
+   └─ MIDTRANS_IS_PRODUCTION
+   
+7. ☐ Testing dengan Midtrans Simulator?
+   └─ Dashboard → Developers → Notification Simulator
+   └─ Test send notification ke backend
+   
+8. ☐ Check backend logs?
+   └─ Lihat apakah ada error di webhook handler
+```
+
+---
+
+### 📋 **Webhook Signature Validation:**
+
+Webhook handler menggunakan signature validation untuk security:
+
+```javascript
+// Di paymentController.js
+const hash = crypto.createHash('sha512')
+  .update(`${order_id}${status_code}${gross_amount}${serverKey}`)
+  .digest('hex');
+
+if (signature_key !== hash) {
+  return res.status(401).json({ message: "Invalid signature" }); // ❌ Reject
+}
+```
+
+**Jika signature tidak match:**
+```
+❌ Webhook ditolak
+❌ Status tidak terupdate
+❌ Check: MIDTRANS_SERVER_KEY sudah benar?
+```
+
+---
+
+### 📊 **Status Flow dengan Webhook:**
+
+```
+┌─────────────────────────────────────────┐
+│ Backend POST /api/payment/create        │
+│ → Save payment dengan status = pending  │
+└──────────────────┬──────────────────────┘
+                   │
+                   ▼
+        ┌──────────────────────┐
+        │ User bayar di Midtrans│
+        │ Simulator / App       │
+        └──────────────┬───────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │ Midtrans terima pembayaran    │
+        │ status_transaction = settlement
+        └──────────────┬───────────────┘
+                       │
+                       ▼
+        ┌─────────────────────────────────┐
+        │ Midtrans SEND WEBHOOK ke Backend│
+        │ POST /api/payment/webhook      │
+        │ {order_id, status, ...}        │
+        └──────────────┬──────────────────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │ Backend terima webhook        │
+        │ ✅ Signature valid?           │
+        └──────────────┬───────────────┘
+                       │
+        ┌──────────────┴────────────────┐
+        │                               │
+        ▼                               ▼
+    ✅ VALID                      ❌ INVALID
+    Update status:                Return 401
+    "settlement"                  └─ Reject
+        │
+        ▼
+    Update Booking
+    status → "Terverifikasi"
+        │
+        ▼
+    Save to MongoDB
+        │
+        ▼
+    ✅ DONE - Status updated!
+```
+
+---
+
+### 🧪 **Testing Webhook Locally:**
+
+Untuk testing di localhost, gunakan tools ini:
+
+#### **Option 1: Ngrok (Recommended)**
+
+```bash
+# Install ngrok
+# https://ngrok.com/download
+
+# Run ngrok
+ngrok http 3000
+# Output: https://xxxxx.ngrok.io
+
+# Midtrans Configuration:
+# Notification URL = https://xxxxx.ngrok.io/api/payment/webhook
+
+# Run backend
+node server/server.js
+```
+
+#### **Option 2: Postman (Manual Testing)**
+
+```
+POST http://localhost:3000/api/payment/webhook
+Content-Type: application/json
+
+Body (Raw JSON):
+{
+  "transaction_time": "2024-01-15 10:35:00",
+  "transaction_status": "settlement",
+  "transaction_id": "123456789",
+  "status_message": "The transaction has been successfully completed.",
+  "status_code": "200",
+  "signature_key": "...", // computed hash
+  "server_key": "...", 
+  "settlement_time": "2024-01-15 10:36:00",
+  "payment_type": "bank_transfer",
+  "order_id": "SPEEDLAB-booking_id-timestamp",
+  "merchant_id": "...",
+  "masked_card": null,
+  "gross_amount": "50000.00",
+  "fraud_status": "accept",
+  "currency": "IDR"
+}
+```
+
+---
+
+### 📱 **Recommended Flow untuk Flutter:**
+
+**Kombinasi Webhook + Polling (Best Practice):**
+
+```
+┌────────────────────────────────────────┐
+│ 1. User click "Bayar Sekarang"         │
+└─────────────┬──────────────────────────┘
+              │
+              ▼
+┌────────────────────────────────────────┐
+│ 2. POST /api/payment/create            │
+│    Dapat: token, redirect_url          │
+└─────────────┬──────────────────────────┘
+              │
+              ▼
+┌────────────────────────────────────────┐
+│ 3. Buka WebView Midtrans              │
+│    START POLLING di background         │
+└─────────────┬──────────────────────────┘
+              │
+              ▼
+┌────────────────────────────────────────┐
+│ 4a. Webhook dari Midtrans (Main)       │
+│     Backend update DB + Booking        │
+│                          OR            │
+│ 4b. Polling detect "settlement"        │
+│     (Fallback jika webhook delay)      │
+└─────────────┬──────────────────────────┘
+              │
+              ▼
+┌────────────────────────────────────────┐
+│ 5. Show Success Dialog                 │
+│    Status = "settlement"               │
+│    Booking = "Terverifikasi"           │
+└────────────────────────────────────────┘
+```
+
+**Implementasi:**
+```dart
+void _handlePayment() async {
+  // 1. Buka payment
+  Navigator.of(context).push(PaymentScreen(...));
+  
+  // 2. Start polling sebagai backup
+  paymentService.pollPaymentStatus(
+    bookingId,
+    interval: const Duration(seconds: 2),
+  ).listen((status) {
+    if (status.isSettled) {
+      // Webhook mungkin sudah update, atau polling yang detect
+      showSuccessDialog();
+    }
+  });
+}
+```
+
+---
+
+## 💾 **STRUKTUR DATABASE PAYMENT**
+
+### Collection: `Payment` (MongoDB)
+
+Status pembayaran disimpan di collection **`Payment`** dengan struktur berikut:
+
+```javascript
+{
+  _id: ObjectId("..."),
+  
+  // 1. RELASI KE BOOKING & USER
+  bookingId: ObjectId("booking_123"),  // Reference ke collection Booking
+  userId: ObjectId("user_456"),         // Reference ke collection User
+  
+  // 2. INFORMASI MIDTRANS
+  orderId: "SPEEDLAB-booking_123-1705315200000", // Unique ID yang dikirim ke Midtrans
+  snapToken: "66e4fa55-fdac-4ef9-91b5-733b5b26xxxx", // Token untuk WebView
+  snapRedirectUrl: "https://app.sandbox.midtrans.com/snap/v3/redirection/...",
+  
+  // 3. INFORMASI PEMBAYARAN
+  grossAmount: 50000, // Rp 50.000 (DP)
+  transactionStatus: "settlement", // ⭐ STATUS PEMBAYARAN
+  paymentType: "bank_transfer", // Tipe metode: gopay, bank_transfer, credit_card, dll
+  
+  // 4. TIMESTAMPS
+  createdAt: ISODate("2024-01-15T10:30:00.000Z"),
+  updatedAt: ISODate("2024-01-15T10:35:00.000Z")
+}
+```
+
+### Field Penting - Status Pembayaran:
+
+```javascript
+transactionStatus: String // Status payment dari Midtrans
+
+Nilai yang mungkin:
+├─ "pending"      → ⏱️ Menunggu pembayaran (initial status)
+├─ "settlement"   → ✅ PEMBAYARAN BERHASIL (LUNAS)
+├─ "cancel"       → ❌ Dibatalkan oleh user
+├─ "expire"       → ⏰ Kadaluarsa (timeout 15 menit)
+├─ "deny"         → 🚫 Ditolak oleh sistem/bank
+└─ "refund"       → 💰 Dana dikembalikan (refund)
+```
+
+### Relasi dengan Collection Lain:
+
+```
+┌─────────────┐
+│   Payment   │
+├─────────────┤
+│ _id         │
+│ bookingId ──┼──→ Booking._id
+│ userId ────┼──→ User._id
+│ orderId     │
+│ grossAmount │
+│ transStatus │ ⭐ STATUS PEMBAYARAN
+│ paymentType │
+│ createdAt   │
+└─────────────┘
+
+Ketika transactionStatus = "settlement":
+  ↓
+  Booking.status OTOMATIS BERUBAH MENJADI "Terverifikasi"
+```
+
+### Query Examples - Cek Status Pembayaran:
+
+```javascript
+// ========== 1. Cek status payment berdasarkan bookingId ==========
+db.payments.findOne({ bookingId: ObjectId("booking_123") });
+// Return: payment document dengan status terbaru
+
+// ========== 2. Cek semua payment pending (belum bayar) ==========
+db.payments.find({ transactionStatus: "pending" });
+
+// ========== 3. Cek semua payment settlement (sudah bayar) ==========
+db.payments.find({ transactionStatus: "settlement" });
+
+// ========== 4. Cek payment user tertentu ==========
+db.payments.find({ userId: ObjectId("user_456") });
+
+// ========== 5. Cek total revenue dari settlement payments ==========
+db.payments.aggregate([
+  { $match: { transactionStatus: "settlement" } },
+  { $group: { 
+      _id: null, 
+      totalRevenue: { $sum: "$grossAmount" } 
+    }
+  }
+]);
+
+// ========== 6. Cek payment berdasarkan payment type ==========
+db.payments.find({ paymentType: "gopay" });
+db.payments.find({ paymentType: "bank_transfer" });
+```
+
+### Status Flow Diagram:
+
+```
+CREATE PAYMENT
+      │
+      ▼
+transactionStatus = "pending"
+      │
+      ├─────────────────────┐
+      │                     │
+      ▼                     ▼
+  USER BAYAR          TIMEOUT/BATAL
+      │                     │
+      ▼                     ▼
+  MIDTRANS           transactionStatus
+  TERIMA              = "expire"/"cancel"
+      │
+      ▼
+  WEBHOOK CALL
+  /api/payment/webhook
+      │
+      ▼
+  Status berubah:
+  "settlement" (✅ LUNAS)
+      │
+      ▼
+  Booking.status 
+  otomatis → "Terverifikasi"
+      │
+      ▼
+  DB Payment terupdate
+```
+
+### Payment Lifecycle:
+
+| Tahap | Status | Kondisi | Booking Status |
+|-------|--------|---------|---|
+| **1. Create Payment** | `pending` | User baru request pembayaran | "Menunggu Verifikasi" |
+| **2. User Bayar** | `pending` | User sedang di Midtrans WebView | "Menunggu Verifikasi" |
+| **3. Pembayaran Berhasil** | `settlement` | Midtrans send webhook dengan status settlement | "Terverifikasi" (auto update) |
+| **4. Payment Expired** | `expire` | User tidak bayar dalam 15 menit | "Menunggu Verifikasi" |
+| **5. Payment Cancelled** | `cancel` | User cancel di Midtrans | "Menunggu Verifikasi" |
+| **6. Payment Denied** | `deny` | Sistem/Bank tolak pembayaran | "Menunggu Verifikasi" |
+| **7. Refund** | `refund` | Dana dikembalikan ke customer | Tergantung (bisa tetap "Terverifikasi") |
+
+### Cara Check Status via API:
+
+```http
+GET /api/payment/status/:bookingId
+Authorization: Bearer <token>
+
+Response:
+{
+  "success": true,
+  "data": {
+    "orderId": "SPEEDLAB-booking_123-1705315200000",
+    "bookingId": "booking_123",
+    "userId": "user_456",
+    "grossAmount": 50000,
+    "transactionStatus": "settlement", // ⭐ CHECK INI
+    "paymentType": "bank_transfer",
+    "snapToken": "66e4fa55-fdac-...",
+    "snapRedirectUrl": "https://app.sandbox.midtrans.com/...",
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:35:00.000Z"
+  }
+}
+```
+
+### Catatan Penting:
+
+✅ **Status Otomatis:**
+- Status ini **otomatis terupdate** ketika Midtrans mengirim webhook
+- Backend akan menerima notifikasi dari Midtrans dan update database
+
+✅ **Booking Auto-Verify:**
+- Ketika `transactionStatus = "settlement"`, booking status **otomatis berubah** ke "Terverifikasi"
+- Ini adalah integrasi automatic yang sudah built-in di webhook handler
+
+✅ **Polling Backup:**
+- Flutter app bisa polling endpoint `/api/payment/status/:bookingId` sebagai backup
+- Jika webhook delay, polling akan detect settlement status
+
+---
+
+## � **IMPLEMENTASI DI FLUTTER**
+
+### 1. Setup Dependencies
+Tambahkan ke `pubspec.yaml`:
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  dio: ^5.0.0  # HTTP Client
+  webview_flutter: ^4.0.0  # WebView untuk Midtrans
+  http: ^1.1.0
+```
+
+### 2. Buat Payment Service
+
+**File: `lib/services/payment_service.dart`**
+
+```dart
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+
+class PaymentService {
+  final Dio dio;
+  final String baseUrl = "http://localhost:3000/api";
+  final String? jwtToken;
+
+  PaymentService({required this.dio, required this.jwtToken});
+
+  // ========== 1. CREATE PAYMENT ==========
+  /// Membuat payment request ke Midtrans
+  /// Returns: {token, redirect_url}
+  Future<PaymentResponse> createPayment(String bookingId) async {
+    try {
+      final response = await dio.post(
+        "$baseUrl/payment/create",
+        data: {"bookingId": bookingId},
+        options: Options(
+          headers: {
+            "Authorization": "Bearer $jwtToken",
+            "Content-Type": "application/json",
+          },
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data['success']) {
+        return PaymentResponse.fromJson(response.data['data']);
+      } else {
+        throw Exception(response.data['message'] ?? 'Failed to create payment');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ========== 2. CHECK PAYMENT STATUS ==========
+  /// Mengecek status pembayaran dari booking
+  /// Returns: {orderId, grossAmount, transactionStatus, paymentType, ...}
+  Future<PaymentStatusResponse> checkPaymentStatus(String bookingId) async {
+    try {
+      final response = await dio.get(
+        "$baseUrl/payment/status/$bookingId",
+        options: Options(
+          headers: {
+            "Authorization": "Bearer $jwtToken",
+            "Content-Type": "application/json",
+          },
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data['success']) {
+        return PaymentStatusResponse.fromJson(response.data['data']);
+      } else {
+        throw Exception(response.data['message'] ?? 'Failed to check payment status');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ========== 3. GET PAYMENT HISTORY ==========
+  /// Mendapatkan riwayat pembayaran user
+  /// Optional: filter dengan bookingId
+  Future<List<PaymentHistoryItem>> getPaymentHistory({String? bookingId}) async {
+    try {
+      String url = "$baseUrl/payment/history";
+      if (bookingId != null) {
+        url += "?bookingId=$bookingId";
+      }
+
+      final response = await dio.get(
+        url,
+        options: Options(
+          headers: {
+            "Authorization": "Bearer $jwtToken",
+            "Content-Type": "application/json",
+          },
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data['success']) {
+        List<dynamic> data = response.data['data'];
+        return data.map((item) => PaymentHistoryItem.fromJson(item)).toList();
+      } else {
+        throw Exception(response.data['message'] ?? 'Failed to get payment history');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ========== 4. POLLING STATUS (Optional but Recommended) ==========
+  /// Polling status pembayaran setiap beberapa detik
+  /// Berguna untuk mendeteksi pembayaran tanpa bergantung webhook
+  Stream<PaymentStatusResponse> pollPaymentStatus(
+    String bookingId, {
+    Duration interval = const Duration(seconds: 2),
+    Duration timeout = const Duration(minutes: 5),
+  }) {
+    return Stream.periodic(interval).asyncMap((_) async {
+      try {
+        return await checkPaymentStatus(bookingId);
+      } catch (e) {
+        throw Exception('Polling error: $e');
+      }
+    }).timeout(
+      timeout,
+      onTimeout: (sink) {
+        sink.close();
+      },
+    );
+  }
+}
+
+// ========== MODELS ==========
+
+class PaymentResponse {
+  final String token;
+  final String redirectUrl;
+
+  PaymentResponse({
+    required this.token,
+    required this.redirectUrl,
+  });
+
+  factory PaymentResponse.fromJson(Map<String, dynamic> json) {
+    return PaymentResponse(
+      token: json['token'] ?? '',
+      redirectUrl: json['redirect_url'] ?? '',
+    );
+  }
+}
+
+class PaymentStatusResponse {
+  final String orderId;
+  final String bookingId;
+  final int grossAmount;
+  final String transactionStatus; // pending, settlement, cancel, expire, deny
+  final String paymentType; // bank_transfer, gopay, credit_card, etc
+  final String snapToken;
+  final String snapRedirectUrl;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  PaymentStatusResponse({
+    required this.orderId,
+    required this.bookingId,
+    required this.grossAmount,
+    required this.transactionStatus,
+    required this.paymentType,
+    required this.snapToken,
+    required this.snapRedirectUrl,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  bool get isSettled => transactionStatus == 'settlement';
+  bool get isPending => transactionStatus == 'pending';
+  bool get isExpired => transactionStatus == 'expire';
+  bool get isCancelled => transactionStatus == 'cancel';
+
+  factory PaymentStatusResponse.fromJson(Map<String, dynamic> json) {
+    return PaymentStatusResponse(
+      orderId: json['orderId'] ?? '',
+      bookingId: json['bookingId'] ?? '',
+      grossAmount: json['grossAmount'] ?? 0,
+      transactionStatus: json['transactionStatus'] ?? 'pending',
+      paymentType: json['paymentType'] ?? '',
+      snapToken: json['snapToken'] ?? '',
+      snapRedirectUrl: json['snapRedirectUrl'] ?? '',
+      createdAt: DateTime.parse(json['createdAt']),
+      updatedAt: DateTime.parse(json['updatedAt']),
+    );
+  }
+}
+
+class PaymentHistoryItem {
+  final String id;
+  final String orderId;
+  final String bookingId;
+  final int grossAmount;
+  final String transactionStatus;
+  final String paymentType;
+  final DateTime createdAt;
+
+  PaymentHistoryItem({
+    required this.id,
+    required this.orderId,
+    required this.bookingId,
+    required this.grossAmount,
+    required this.transactionStatus,
+    required this.paymentType,
+    required this.createdAt,
+  });
+
+  factory PaymentHistoryItem.fromJson(Map<String, dynamic> json) {
+    return PaymentHistoryItem(
+      id: json['_id'] ?? '',
+      orderId: json['orderId'] ?? '',
+      bookingId: json['bookingId'] ?? '',
+      grossAmount: json['grossAmount'] ?? 0,
+      transactionStatus: json['transactionStatus'] ?? '',
+      paymentType: json['paymentType'] ?? '',
+      createdAt: DateTime.parse(json['createdAt']),
+    );
+  }
+}
+```
+
+### 3. Buat Payment UI Widget
+
+**File: `lib/screens/payment_screen.dart`**
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:your_app/services/payment_service.dart';
+
+class PaymentScreen extends StatefulWidget {
+  final String bookingId;
+  final PaymentService paymentService;
+
+  const PaymentScreen({
+    required this.bookingId,
+    required this.paymentService,
+  });
+
+  @override
+  State<PaymentScreen> createState() => _PaymentScreenState();
+}
+
+class _PaymentScreenState extends State<PaymentScreen> {
+  late WebViewController webViewController;
+  bool isLoading = true;
+  String? paymentUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializePayment();
+  }
+
+  /// [STEP 1] Minta token pembayaran dari backend
+  Future<void> _initializePayment() async {
+    try {
+      final paymentResponse = await widget.paymentService.createPayment(
+        widget.bookingId,
+      );
+
+      if (mounted) {
+        setState(() {
+          paymentUrl = paymentResponse.redirectUrl;
+        });
+
+        _setupWebView();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  /// [STEP 2] Setup WebView untuk Midtrans
+  void _setupWebView() {
+    webViewController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (String url) {
+            setState(() => isLoading = true);
+          },
+          onPageFinished: (String url) {
+            setState(() => isLoading = false);
+            // Cek apakah redirect kembali ke app (optional)
+            _checkPaymentStatus();
+          },
+          onWebResourceError: (WebResourceError error) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: ${error.description}')),
+            );
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(paymentUrl!));
+  }
+
+  /// [STEP 3] Polling status pembayaran
+  /// Cara 1: Polling otomatis setiap 2 detik
+  /// Cara 2: User click button "Cek Status Pembayaran"
+  Future<void> _checkPaymentStatus() async {
+    try {
+      final status = await widget.paymentService.checkPaymentStatus(
+        widget.bookingId,
+      );
+
+      if (mounted) {
+        if (status.isSettled) {
+          // ✅ PEMBAYARAN BERHASIL
+          _showSuccessDialog(status);
+        } else if (status.isPending) {
+          // ⏱️ MASIH PENDING
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Pembayaran masih diproses...'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        } else if (status.isExpired) {
+          // ❌ KADALUARSA
+          _showExpiredDialog(status);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error checking status: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  void _showSuccessDialog(PaymentStatusResponse status) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('✅ Pembayaran Berhasil'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Order ID: ${status.orderId}'),
+            Text('Amount: Rp ${status.grossAmount}'),
+            Text('Payment Type: ${status.paymentType}'),
+            Text('Status: ${status.transactionStatus}'),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context)
+                ..pop() // Close dialog
+                ..pop(); // Back to booking page
+            },
+            child: const Text('Kembali ke Booking'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showExpiredDialog(PaymentStatusResponse status) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('❌ Pembayaran Expired'),
+        content: const Text('Waktu pembayaran telah berakhir. Silakan buat booking baru.'),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context)
+                ..pop()
+                ..pop();
+            },
+            child: const Text('Kembali'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Pembayaran Midtrans'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _checkPaymentStatus,
+            tooltip: 'Cek Status Pembayaran',
+          ),
+        ],
+      ),
+      body: paymentUrl == null
+          ? const Center(child: CircularProgressIndicator())
+          : Stack(
+              children: [
+                WebViewWidget(controller: webViewController),
+                if (isLoading)
+                  const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+              ],
+            ),
+    );
+  }
+}
+```
+
+### 4. Implementasi di Booking Page
+
+**File: `lib/screens/booking_detail_screen.dart`** (Contoh snippet)
+
+```dart
+class BookingDetailScreen extends StatefulWidget {
+  final String bookingId;
+  // ...
+  @override
+  State<BookingDetailScreen> createState() => _BookingDetailScreenState();
+}
+
+class _BookingDetailScreenState extends State<BookingDetailScreen> {
+  late PaymentService paymentService;
+  // ...
+
+  @override
+  void initState() {
+    super.initState();
+    paymentService = PaymentService(
+      dio: Dio(),
+      jwtToken: _getStoredToken(), // dari SharedPreferences/Provider
+    );
+  }
+
+  void _handlePaymentClick() async {
+    try {
+      // ========== CARA 1: LANGSUNG KE PAYMENT SCREEN ==========
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PaymentScreen(
+            bookingId: widget.bookingId,
+            paymentService: paymentService,
+          ),
+        ),
+      ).then((_) {
+        // Setelah kembali dari payment, refresh status booking
+        _refreshBookingStatus();
+      });
+
+      // ========== ATAU CARA 2: DENGAN LOADING DIALOG ==========
+      // showDialog(
+      //   context: context,
+      //   builder: (_) => AlertDialog(
+      //     title: const Text('Loading...'),
+      //     content: FutureBuilder<PaymentResponse>(
+      //       future: paymentService.createPayment(widget.bookingId),
+      //       builder: (context, snapshot) {
+      //         if (snapshot.connectionState == ConnectionState.done) {
+      //           if (snapshot.hasData) {
+      //             // Launch payment URL
+      //             _launchPaymentUrl(snapshot.data!.redirectUrl);
+      //           } else {
+      //             return Text('Error: ${snapshot.error}');
+      //           }
+      //         }
+      //         return const CircularProgressIndicator();
+      //       },
+      //     ),
+      //   ),
+      // );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    }
+  }
+
+  Future<void> _refreshBookingStatus() async {
+    try {
+      final status = await paymentService.checkPaymentStatus(widget.bookingId);
+      if (status.isSettled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Pembayaran berhasil!')),
+        );
+        // Update UI dan booking data
+        setState(() {
+          // Update booking status
+        });
+      }
+    } catch (e) {
+      debugPrint('Error refreshing status: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Detail Booking')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // ... booking details ...
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: _handlePaymentClick,
+              icon: const Icon(Icons.payment),
+              label: const Text('Bayar Sekarang'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                backgroundColor: Colors.blue,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+### 5. Best Practices
+
+#### ✅ **POLLING vs WEBHOOK**
+
+| Metode | Kelebihan | Kekurangan | Kapan Gunakan |
+|--------|-----------|-----------|---------------|
+| **Polling** | Real-time di app, tidak perlu server setup | Boros battery/data | Testing, atau production dengan webhook backup |
+| **Webhook** | Ef fisien (backend trigger) | Butuh konfigurasi server | Production (recommended) |
+| **kombinasi** | Best of both | Setup kompleks | Production + realtime UI |
+
+#### ✅ **RECOMMENDED IMPLEMENTATION**
+
+```dart
+// Gunakan kombinasi: Webhook + Polling Backup
+Future<void> _handlePaymentFlow(String bookingId) async {
+  // 1. Buka payment WebView
+  Navigator.of(context).push(...PaymentScreen...);
+
+  // 2. Polling untuk backup (jika webhook delay)
+  final pollStream = paymentService.pollPaymentStatus(
+    bookingId,
+    interval: const Duration(seconds: 2),
+    timeout: const Duration(minutes: 5),
+  );
+
+  // 3. Listen polling result
+  pollStream.listen((status) {
+    if (status.isSettled) {
+      print('✅ Payment confirmed via polling');
+      _updateBookingUI();
+    }
+  });
+
+  // 4. Webhook akan trigger server-side update
+  //    (Backend sudah update booking status)
+}
+```
+
+#### ✅ **ERROR HANDLING**
+
+```dart
+Future<void> _createPaymentWithErrorHandling(String bookingId) async {
+  try {
+    final response = await paymentService.createPayment(bookingId);
+    
+    // Check if redirect_url valid
+    if (response.redirectUrl.isEmpty) {
+      throw Exception('Redirect URL kosong');
+    }
+    
+    // Load URL ke WebView
+    // ...
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 401) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session expired. Silakan login ulang.')),
+      );
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+    } else if (e.response?.statusCode == 400) {
+      final message = e.response?.data['message'] ?? 'Invalid booking data';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $message')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Network error: ${e.message}')),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Unexpected error: ${e.toString()}')),
+    );
+  }
+}
+```
+
+---
+
+## �🚀 Cara Menjalankan
 
 1. Install dependencies:
 ```bash
@@ -1189,11 +2499,39 @@ Server akan berjalan di `http://localhost:3000`
 3. **Real-time Status**: Update status motor menggunakan endpoint PATCH `/api/motorcycles/:id/status`
 4. **Grafik**: Gunakan endpoint `/stats/summary` untuk mendapatkan data grafik
 5. **Error Handling**: Semua response memiliki field `success` untuk cek berhasil/gagal
-6. **Payment Integration**: 
-   - Gunakan WebView untuk membuka `redirect_url` dari Midtrans
-   - Setelah payment selesai, user akan di-redirect kembali ke app
-   - Gunakan endpoint `/api/payment/status/:bookingId` untuk refresh status payment
-   - Status booking akan otomatis berubah jadi "Terverifikasi" setelah payment settlement
+6. **Payment Integration** - 3 Pilihan Implementasi:
+
+   **Opsi 1: Sederhana (Hanya WebView)**
+   ```
+   1. User click "Bayar Sekarang"
+   2. API POST /api/payment/create → dapat redirect_url
+   3. Buka WebView ke Midtrans
+   4. User bayar (pilih metode)
+   5. Redirect kembali ke app
+   6. User click "Cek Status" → GET /api/payment/status/bookingId
+   7. Jika settlement → show success
+   ```
+
+   **Opsi 2: Realtime Polling (Recommended untuk Testing)**
+   ```
+   1. User click "Bayar Sekarang"
+   2. API POST /api/payment/create → dapat redirect_url
+   3. Buka WebView ke Midtrans + start polling di background
+   4. User bayar
+   5. App detect settlement via polling (setiap 2 detik)
+   6. Show success otomatis (tidak perlu user action)
+   ```
+
+   **Opsi 3: Production-Grade (Webhook + Polling Backup)**
+   ```
+   1-5. Same seperti Opsi 2
+   6. Backend juga receive webhook dari Midtrans
+   7. Backend update booking status otomatis
+   8. App polling sebagai backup (fallback jika webhook delay)
+   9. User experience: pembayaran confirmed ASAP
+   ```
+
+   See section **💻 IMPLEMENTASI DI FLUTTER** untuk detail & code samples!
 
 ---
 

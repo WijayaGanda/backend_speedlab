@@ -1,6 +1,8 @@
 const Booking = require("../model/BookingModel");
 const Motorcycle = require("../model/MotorcycleModel");
 const Service = require("../model/ServiceModel");
+const User = require("../model/UserModel");
+const { sendNotificationToUser } = require("../lib/notificationHelper");
 
 // Create - Buat booking baru
 const createBooking = async (req, res) => {
@@ -52,6 +54,28 @@ const createBooking = async (req, res) => {
     });
 
     await booking.save();
+
+    // Kirim notifikasi ke semua admin
+    try {
+      const admins = await User.find({ 
+        role: { $in: ['admin', 'pemilik'] },
+        isActive: true 
+      }).select('_id name');
+      
+      if (admins && admins.length > 0) {
+        const formattedDate = new Date(bookingDate).toLocaleDateString('id-ID');
+        const motorcycleName = `${motorcycle.brand} ${motorcycle.model}`;
+        
+        for (const admin of admins) {
+          await sendNotificationToUser(admin._id, {
+            title: '🔔 Booking Baru Masuk!',
+            body: `${req.user.name} membuat booking untuk ${motorcycleName}. Tanggal: ${formattedDate} ${bookingTime}. Total: Rp ${totalPrice.toLocaleString('id-ID')}`
+          }, { type: 'booking', relatedId: booking._id, relatedModel: 'Booking' });
+        }
+      }
+    } catch (notifErr) {
+      console.warn('Gagal mengirim notifikasi ke admin:', notifErr.message);
+    }
 
     const populatedBooking = await Booking.findById(booking._id)
       .populate('userId', 'name email phone')
@@ -276,6 +300,24 @@ const updateBookingStatus = async (req, res) => {
       });
     }
 
+    // Kirim notifikasi ke user hanya untuk status "Sedang Dikerjakan" dan "Selesai"
+    try {
+      if (status === 'Sedang Dikerjakan') {
+        await sendNotificationToUser(booking.userId._id, {
+          title: '🔧 Booking Sedang Dikerjakan',
+          body: `Booking untuk ${booking.motorcycleId.brand} ${booking.motorcycleId.model} sedang dikerjakan...`
+        }, { type: 'booking', relatedId: booking._id, relatedModel: 'Booking' });
+      } else if (status === 'Selesai') {
+        const finalPrice = booking.finalCost || booking.totalPrice;
+        await sendNotificationToUser(booking.userId._id, {
+          title: '✅ Booking Selesai!',
+          body: `Selesai! Total: Rp ${finalPrice.toLocaleString('id-ID')}. Ambil motor Anda.`
+        }, { type: 'booking', relatedId: booking._id, relatedModel: 'Booking' });
+      }
+    } catch (notifErr) {
+      console.warn('Gagal mengirim notifikasi ke user:', notifErr.message);
+    }
+
     res.status(200).json({
       success: true,
       message: "Status booking berhasil diupdate",
@@ -458,6 +500,110 @@ const cancelBooking = async (req, res) => {
   }
 };
 
+// Read - Get bookings by date (untuk admin/pemilik)
+const getBookingsByDate = async (req, res) => {
+  try {
+    const { date, status } = req.query;
+
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: "Parameter tanggal (date) diperlukan"
+      });
+    }
+
+    // Parse date dan set time range untuk satu hari penuh
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(date);
+    endDate.setHours(23, 59, 59, 999);
+
+    let query = {
+      bookingDate: {
+        $gte: startDate,
+        $lte: endDate
+      }
+    };
+
+    // Optional: filter by status
+    if (status) {
+      query.status = status;
+    }
+
+    const bookings = await Booking.find(query)
+      .populate('userId', 'name email phone')
+      .populate('motorcycleId')
+      .populate('serviceIds')
+      .populate('verifiedBy', 'name')
+      .sort({ bookingTime: 1 }); // Sort by time
+
+    res.status(200).json({
+      success: true,
+      date: date,
+      count: bookings.length,
+      data: bookings
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error mengambil data booking berdasarkan tanggal",
+      error: error.message
+    });
+  }
+};
+
+// Read - Get user bookings by date (untuk pelanggan)
+const getUserBookingsByDate = async (req, res) => {
+  try {
+    const { date, status } = req.query;
+
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: "Parameter tanggal (date) diperlukan"
+      });
+    }
+
+    // Parse date dan set time range untuk satu hari penuh
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(date);
+    endDate.setHours(23, 59, 59, 999);
+
+    let query = {
+      userId: req.user._id,
+      bookingDate: {
+        $gte: startDate,
+        $lte: endDate
+      }
+    };
+
+    // Optional: filter by status
+    if (status) {
+      query.status = status;
+    }
+
+    const bookings = await Booking.find(query)
+      .populate('motorcycleId')
+      .populate('serviceIds')
+      .populate('verifiedBy', 'name')
+      .sort({ bookingTime: 1 }); // Sort by time
+
+    res.status(200).json({
+      success: true,
+      date: date,
+      count: bookings.length,
+      data: bookings
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error mengambil data booking berdasarkan tanggal",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createBooking,
   getAllBookings,
@@ -468,5 +614,7 @@ module.exports = {
   updateBooking,
   deleteBooking,
   getBookingStats,
-  cancelBooking
+  cancelBooking,
+  getBookingsByDate,
+  getUserBookingsByDate
 };
