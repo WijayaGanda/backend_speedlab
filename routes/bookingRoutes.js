@@ -28,8 +28,10 @@ router.get("/my-bookings", authorize('pelanggan'), getUserBookings);
 router.get("/my-bookings/by-date", authorize('pelanggan'), getUserBookingsByDate);
 router.patch("/:id/cancel", authorize('pelanggan'), cancelBooking);
 
+// Routes untuk melihat ketersediaan booking pada tanggal tertentu (accessible untuk pelanggan, admin, pemilik)
+router.get("/by-date", getBookingsByDate);
+
 // Admin routes
-router.get("/by-date", authorize('admin', 'pemilik'), getBookingsByDate);
 router.get("/", authorize('admin', 'pemilik'), getAllBookings);
 router.get("/:id", getBookingById);
 router.patch("/:id/verify", authorize('admin'), verifyBooking);
