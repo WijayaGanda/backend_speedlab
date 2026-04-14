@@ -70,6 +70,15 @@ const serviceHistorySchema = new mongoose.Schema({
   notes: { 
     type: String 
   },
+  workPhotos: [{
+    filename: String,           // Nama file di server
+    path: String,              // Path file (local: /uploads/..., cloud: URL)
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    },
+    description: String        // Deskripsi foto (opsional)
+  }],
   createdAt: { 
     type: Date, 
     default: Date.now 

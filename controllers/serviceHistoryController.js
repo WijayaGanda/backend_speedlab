@@ -1,5 +1,7 @@
 const ServiceHistory = require("../model/ServiceHistoryModel");
 const Booking = require("../model/BookingModel");
+const { deleteLocalFile, deleteLocalFiles, deleteServiceHistoryFiles } = require("../middleware/uploadMiddleware");
+const path = require('path');
 
 // Create - Tambah riwayat servis (bisa saat "Sedang Dikerjakan" atau "Selesai")
 const createServiceHistory = async (req, res) => {
@@ -296,6 +298,9 @@ const deleteServiceHistory = async (req, res) => {
       });
     }
 
+    // Hapus semua file yang terkait dengan service history ini
+    deleteServiceHistoryFiles(history);
+
     res.status(200).json({
       success: true,
       message: "Riwayat servis berhasil dihapus"
@@ -309,32 +314,186 @@ const deleteServiceHistory = async (req, res) => {
   }
 };
 
-// Read - Get service history by booking ID
-const getServiceHistoryByBookingId = async (req, res) => {
+// Upload - Upload work progress photos (admin)
+const uploadWorkPhotos = async (req, res) => {
   try {
-    const { bookingId } = req.params;
+    const { serviceHistoryId } = req.params;
+    const { description } = req.body;
 
-    const history = await ServiceHistory.findOne({ bookingId })
+    const history = await ServiceHistory.findById(serviceHistoryId);
+
+    if (!history) {
+      // Jika ada files yang diunggah, hapus mereka
+      if (req.files && req.files.length > 0) {
+        req.files.forEach(file => deleteLocalFile(file.filename));
+      }
+      return res.status(404).json({ 
+        success: false,
+        message: "Service history tidak ditemukan" 
+      });
+    }
+
+    // Validasi ada files yang diunggah
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Tidak ada file yang diunggah" 
+      });
+    }
+
+    // Process uploaded files
+    const newPhotos = req.files.map((file, index) => ({
+      filename: file.filename,
+      path: `/uploads/service-history/${file.filename}`,
+      uploadedAt: new Date(),
+      description: Array.isArray(description) ? description[index] : description || `Photo ${index + 1}`
+    }));
+
+    // Add photos ke workPhotos array
+    if (!history.workPhotos) {
+      history.workPhotos = [];
+    }
+    
+    history.workPhotos.push(...newPhotos);
+    history.updatedAt = Date.now();
+
+    await history.save();
+
+    const updatedHistory = await ServiceHistory.findById(history._id)
       .populate('userId', 'name email phone')
       .populate('motorcycleId')
       .populate('serviceIds')
       .populate('bookingId');
 
+    res.status(200).json({
+      success: true,
+      message: `${req.files.length} foto berhasil diunggah`,
+      data: updatedHistory,
+      uploadedPhotos: newPhotos
+    });
+  } catch (error) {
+    // Jika terjadi error, hapus semua files yang diunggah
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => deleteLocalFile(file.filename));
+    }
+    res.status(500).json({ 
+      success: false,
+      message: "Error mengupload foto", 
+      error: error.message 
+    });
+  }
+};
+
+// Delete - Delete single work photo
+const deleteWorkPhoto = async (req, res) => {
+  try {
+    const { serviceHistoryId, photoIndex } = req.params;
+
+    const history = await ServiceHistory.findById(serviceHistoryId);
+
     if (!history) {
       return res.status(404).json({ 
         success: false,
-        message: "Service history untuk booking ini tidak ditemukan" 
+        message: "Service history tidak ditemukan" 
       });
     }
 
+    if (!history.workPhotos || history.workPhotos.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Tidak ada foto di service history ini" 
+      });
+    }
+
+    const index = parseInt(photoIndex);
+    if (isNaN(index) || index < 0 || index >= history.workPhotos.length) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Index foto tidak valid" 
+      });
+    }
+
+    // Hapus file
+    const photo = history.workPhotos[index];
+    deleteLocalFile(photo.filename);
+
+    // Remove dari array
+    history.workPhotos.splice(index, 1);
+    history.updatedAt = Date.now();
+
+    await history.save();
+
+    const updatedHistory = await ServiceHistory.findById(history._id)
+      .populate('userId', 'name email phone')
+      .populate('motorcycleId')
+      .populate('serviceIds')
+      .populate('bookingId');
+
     res.status(200).json({
       success: true,
-      data: history
+      message: "Foto berhasil dihapus",
+      data: updatedHistory
     });
   } catch (error) {
     res.status(500).json({ 
       success: false,
-      message: "Error mengambil riwayat servis", 
+      message: "Error menghapus foto", 
+      error: error.message 
+    });
+  }
+};
+
+// Update - Update photo description
+const updatePhotoDescription = async (req, res) => {
+  try {
+    const { serviceHistoryId, photoIndex } = req.params;
+    const { description } = req.body;
+
+    const history = await ServiceHistory.findById(serviceHistoryId);
+
+    if (!history) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Service history tidak ditemukan" 
+      });
+    }
+
+    if (!history.workPhotos || history.workPhotos.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Tidak ada foto di service history ini" 
+      });
+    }
+
+    const index = parseInt(photoIndex);
+    if (isNaN(index) || index < 0 || index >= history.workPhotos.length) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Index foto tidak valid" 
+      });
+    }
+
+    if (description !== undefined) {
+      history.workPhotos[index].description = description;
+      history.updatedAt = Date.now();
+      await history.save();
+    }
+
+    const updatedHistory = await ServiceHistory.findById(history._id)
+      .populate('userId', 'name email phone')
+      .populate('motorcycleId')
+      .populate('serviceIds')
+      .populate('bookingId');
+
+    res.status(200).json({
+      success: true,
+      message: "Deskripsi foto berhasil diupdate",
+      data: updatedHistory
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      message: "Error update deskripsi foto", 
       error: error.message 
     });
   }
@@ -348,5 +507,8 @@ module.exports = {
   getServiceHistoryById,
   getServiceHistoryByBookingId,
   updateServiceHistory,
-  deleteServiceHistory
+  deleteServiceHistory,
+  uploadWorkPhotos,
+  deleteWorkPhoto,
+  updatePhotoDescription
 };

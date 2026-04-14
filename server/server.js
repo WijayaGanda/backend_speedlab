@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const passport = require('passport');
 const session = require('express-session');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 require('../passport');
@@ -24,6 +25,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files (uploads folder)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Koneksi MongoDB
 mongoose.connect(process.env.MONGODB_URI || "mongodb+srv://speedlab:<speedlab>@cluster0.oskgsvi.mongodb.net/?appName=Cluster0")

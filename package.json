@@ -28,6 +28,7 @@
     "midtrans-client": "^1.4.3",
     "mongoose": "^8.20.2",
     "mongose": "^0.0.2-security",
+    "multer": "^1.4.5-lts.1",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0"
   },
