@@ -70,6 +70,12 @@ const serviceHistorySchema = new mongoose.Schema({
   notes: { 
     type: String 
   },
+  workPhotos: [{
+    filename: String,
+    path: String, // Menyimpan URL public gambar dari Supabase
+    uploadedAt: { type: Date, default: Date.now },
+    description: String
+  }],
   createdAt: { 
     type: Date, 
     default: Date.now 
