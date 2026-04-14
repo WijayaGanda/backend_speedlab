@@ -1,44 +1,29 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
-// Environment check
-const isProduction = process.env.NODE_ENV === 'production';
+const { createClient } = require('@supabase/supabase-js');
 
 // =============================================
-// OPTION 1: LOCAL STORAGE (Default - Development)
+// SUPABASE CONFIGURATION
 // =============================================
 
-let uploadDir;
-let localStorage;
+const supabaseUrl = process.env.SUPABASE_URL || 'https://ylyiiipafwquvzjamxol.supabase.co';
+const supabaseKey = process.env.SUPABASE_KEY;
 
-if (!isProduction) {
-  // Buat folder uploads jika belum ada (hanya untuk development)
-  uploadDir = path.join(__dirname, '../uploads/service-history');
-  
-  // Safe mkdir dengan recursive
-  try {
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-  } catch (error) {
-    console.warn('Warning: Tidak bisa membuat upload directory:', error.message);
-  }
-
-  // Configure storage untuk local file
-  localStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      cb(null, 'servicehistory-' + uniqueSuffix + path.extname(file.originalname));
-    }
-  });
-} else {
-  // Production: Gunakan memory storage (temporary)
-  localStorage = multer.memoryStorage();
+if (!supabaseKey) {
+  console.warn('⚠️ Warning: SUPABASE_KEY tidak ditemukan di .env');
 }
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+const BUCKET_NAME = 'service-history';
+
+// =============================================
+// MULTER CONFIGURATION (Memory Storage untuk File)
+// =============================================
+
+// Memory storage - file disimpan di RAM, akan langsung di-upload ke Supabase
+const storage = multer.memoryStorage();
 
 // File filter - hanya terima gambar
 const fileFilter = (req, file, cb) => {
@@ -56,7 +41,7 @@ const fileFilter = (req, file, cb) => {
 
 // Size limit: 5MB per file, max 10 files
 const uploadServiceHistory = multer({
-  storage: localStorage,
+  storage: storage,
   fileFilter: fileFilter,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
@@ -65,48 +50,124 @@ const uploadServiceHistory = multer({
 });
 
 // =============================================
-// HELPER FUNCTION: Hapus file lokal
+// HELPER FUNCTIONS: Upload ke Supabase
 // =============================================
-const deleteLocalFile = (filename) => {
-  if (isProduction) {
-    // Di production, file ada di memory, tidak perlu delete
-    return;
-  }
-  
+
+/**
+ * Upload file ke Supabase Storage
+ * @param {Buffer} fileBuffer - File content
+ * @param {String} fileName - Nama file
+ * @param {String} mimetype - File mime type
+ * @returns {Promise<{success: boolean, path: string, url: string, error?: string}>}
+ */
+const uploadToSupabase = async (fileBuffer, fileName, mimetype) => {
   try {
-    if (!uploadDir) return;
-    const filePath = path.join(uploadDir, filename);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`File deleted: ${filename}`);
+    if (!supabaseKey) {
+      throw new Error('SUPABASE_KEY tidak dikonfigurasi');
     }
+
+    // Generate unique filename
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1E9);
+    const fileExt = path.extname(fileName);
+    const uniqueFileName = `servicehistory-${timestamp}-${randomSuffix}${fileExt}`;
+
+    // Upload ke Supabase
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(uniqueFileName, fileBuffer, {
+        contentType: mimetype,
+        upsert: false
+      });
+
+    if (error) {
+      throw new Error(`Upload failed: ${error.message}`);
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(uniqueFileName);
+
+    return {
+      success: true,
+      filename: uniqueFileName,
+      path: publicUrl,
+      url: publicUrl
+    };
   } catch (error) {
-    console.error(`Error deleting file ${filename}:`, error.message);
+    console.error('Error uploading to Supabase:', error.message);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 };
 
-// Delete multiple files
-const deleteLocalFiles = (filenames) => {
-  if (Array.isArray(filenames)) {
-    filenames.forEach(filename => deleteLocalFile(filename));
+/**
+ * Delete file dari Supabase Storage
+ * @param {String} fileName - Nama file di Supabase
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+const deleteFromSupabase = async (fileName) => {
+  try {
+    if (!supabaseKey) {
+      console.warn('Cannot delete: SUPABASE_KEY tidak dikonfigurasi');
+      return { success: false, error: 'SUPABASE_KEY not configured' };
+    }
+
+    const { error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .remove([fileName]);
+
+    if (error) {
+      throw new Error(`Delete failed: ${error.message}`);
+    }
+
+    console.log(`✅ File deleted from Supabase: ${fileName}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting from Supabase:', error.message);
+    return { success: false, error: error.message };
   }
 };
 
-// =============================================
-// HELPER FUNCTION: Hapus file dari ServiceHistory
-// =============================================
-const deleteServiceHistoryFiles = (serviceHistory) => {
+/**
+ * Extract filename dari Supabase public URL
+ * @param {String} url - Supabase public URL
+ * @returns {String} - Filename
+ */
+const extractFileNameFromUrl = (url) => {
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/');
+    // Format: /storage/v1/object/public/service-history/{fileName}
+    return pathParts[pathParts.length - 1];
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Delete files dari ServiceHistory
+ * @param {Object} serviceHistory - Service history object
+ */
+const deleteServiceHistoryFiles = async (serviceHistory) => {
   if (serviceHistory && serviceHistory.workPhotos && serviceHistory.workPhotos.length > 0) {
-    const filenames = serviceHistory.workPhotos.map(photo => photo.filename);
-    deleteLocalFiles(filenames);
+    for (const photo of serviceHistory.workPhotos) {
+      const fileName = extractFileNameFromUrl(photo.path);
+      if (fileName) {
+        await deleteFromSupabase(fileName);
+      }
+    }
   }
 };
 
 module.exports = {
   uploadServiceHistory,
-  deleteLocalFile,
-  deleteLocalFiles,
+  uploadToSupabase,
+  deleteFromSupabase,
   deleteServiceHistoryFiles,
-  uploadDir,
-  isProduction
+  extractFileNameFromUrl,
+  supabase
 };

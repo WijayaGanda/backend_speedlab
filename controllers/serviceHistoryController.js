@@ -1,6 +1,6 @@
 const ServiceHistory = require("../model/ServiceHistoryModel");
 const Booking = require("../model/BookingModel");
-const { deleteLocalFile, deleteLocalFiles, deleteServiceHistoryFiles, isProduction } = require("../middleware/uploadMiddleware");
+const { uploadToSupabase, deleteFromSupabase, deleteServiceHistoryFiles, extractFileNameFromUrl } = require("../middleware/uploadMiddleware");
 const path = require('path');
 
 // Create - Tambah riwayat servis (bisa saat "Sedang Dikerjakan" atau "Selesai")
@@ -298,8 +298,8 @@ const deleteServiceHistory = async (req, res) => {
       });
     }
 
-    // Hapus semua file yang terkait dengan service history ini
-    deleteServiceHistoryFiles(history);
+    // Hapus semua file dari Supabase yang terkait
+    await deleteServiceHistoryFiles(history);
 
     res.status(200).json({
       success: true,
@@ -314,35 +314,13 @@ const deleteServiceHistory = async (req, res) => {
   }
 };
 
-// Upload - Upload work progress photos (admin)
+// Upload - Upload work progress photos ke Supabase (admin)
 const uploadWorkPhotos = async (req, res) => {
   try {
-    // Production warning: File upload tidak fully supported di serverless environment
-    if (isProduction) {
-      return res.status(503).json({ 
-        success: false,
-        message: "File upload feature sedang dalam maintenance. Untuk production, gunakan cloud storage (AWS S3, Azure Blob, dll)",
-        note: "Hubungi developer untuk implementasi cloud storage"
-      });
-    }
-
     const { serviceHistoryId } = req.params;
     const { description } = req.body;
 
-    const history = await ServiceHistory.findById(serviceHistoryId);
-
-    if (!history) {
-      // Jika ada files yang diunggah, hapus mereka
-      if (req.files && req.files.length > 0) {
-        req.files.forEach(file => deleteLocalFile(file.filename));
-      }
-      return res.status(404).json({ 
-        success: false,
-        message: "Service history tidak ditemukan" 
-      });
-    }
-
-    // Validasi ada files yang diunggah
+    // Validasi ada files
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ 
         success: false,
@@ -350,13 +328,46 @@ const uploadWorkPhotos = async (req, res) => {
       });
     }
 
-    // Process uploaded files
-    const newPhotos = req.files.map((file, index) => ({
-      filename: file.filename,
-      path: `/uploads/service-history/${file.filename}`,
-      uploadedAt: new Date(),
-      description: Array.isArray(description) ? description[index] : description || `Photo ${index + 1}`
-    }));
+    // Validasi service history
+    const history = await ServiceHistory.findById(serviceHistoryId);
+    if (!history) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Service history tidak ditemukan" 
+      });
+    }
+
+    // Upload semua files ke Supabase
+    const uploadPromises = req.files.map((file, index) =>
+      uploadToSupabase(file.buffer, file.originalname, file.mimetype)
+        .then(result => ({
+          ...result,
+          index,
+          description: Array.isArray(description) ? description[index] : description || `Photo ${index + 1}`
+        }))
+    );
+
+    const uploadResults = await Promise.all(uploadPromises);
+
+    // Check jika ada yang gagal
+    const failedUploads = uploadResults.filter(r => !r.success);
+    if (failedUploads.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `${failedUploads.length} dari ${req.files.length} file gagal diunggah`,
+        errors: failedUploads.map((r, idx) => ({ index: idx, error: r.error }))
+      });
+    }
+
+    // Process successful uploads
+    const newPhotos = uploadResults
+      .filter(r => r.success)
+      .map(r => ({
+        filename: r.filename,
+        path: r.path,
+        uploadedAt: new Date(),
+        description: r.description
+      }));
 
     // Add photos ke workPhotos array
     if (!history.workPhotos) {
@@ -376,15 +387,11 @@ const uploadWorkPhotos = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `${req.files.length} foto berhasil diunggah`,
+      message: `${newPhotos.length} foto berhasil diunggah ke Supabase`,
       data: updatedHistory,
       uploadedPhotos: newPhotos
     });
   } catch (error) {
-    // Jika terjadi error, hapus semua files yang diunggah
-    if (req.files && req.files.length > 0) {
-      req.files.forEach(file => deleteLocalFile(file.filename));
-    }
     res.status(500).json({ 
       success: false,
       message: "Error mengupload foto", 
@@ -393,7 +400,7 @@ const uploadWorkPhotos = async (req, res) => {
   }
 };
 
-// Delete - Delete single work photo
+// Delete - Delete single work photo dari Supabase
 const deleteWorkPhoto = async (req, res) => {
   try {
     const { serviceHistoryId, photoIndex } = req.params;
@@ -422,9 +429,17 @@ const deleteWorkPhoto = async (req, res) => {
       });
     }
 
-    // Hapus file
+    // Hapus file dari Supabase
     const photo = history.workPhotos[index];
-    deleteLocalFile(photo.filename);
+    const fileName = extractFileNameFromUrl(photo.path);
+    
+    if (fileName) {
+      const deleteResult = await deleteFromSupabase(fileName);
+      if (!deleteResult.success) {
+        console.warn(`Warning: Delete dari Supabase gagal - ${deleteResult.error}`);
+        // Tetap lanjutkan, hapus dari DB
+      }
+    }
 
     // Remove dari array
     history.workPhotos.splice(index, 1);
