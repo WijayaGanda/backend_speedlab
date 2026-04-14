@@ -38,9 +38,20 @@ const bookingSchema = new mongoose.Schema({
   verifiedAt: {
     type: Date
   },
+  servicePrice: { 
+    type: Number, 
+    default: 0,
+    description: "Harga dari service/jasa saja"
+  },
+  sparepartsPrice: { 
+    type: Number, 
+    default: 0,
+    description: "Harga dari spare parts yang digunakan"
+  },
   totalPrice: { 
     type: Number, 
-    default: 0 
+    default: 0,
+    description: "Total harga = servicePrice + sparepartsPrice"
   },
   notes: { 
     type: String 

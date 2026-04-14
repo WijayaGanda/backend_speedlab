@@ -11,7 +11,6 @@ const createServiceHistory = async (req, res) => {
       spareParts, 
       mechanicName, 
       startDate, 
-      totalPrice, 
       notes 
     } = req.body;
 
@@ -44,6 +43,18 @@ const createServiceHistory = async (req, res) => {
       });
     }
 
+    // Kalkulasi servicePrice dari booking serviceIds
+    let servicePrice = booking.servicePrice || 0; // Ambil dari booking yang sudah tersimpan
+
+    // Kalkulasi sparepartsPrice dari spareParts yang dikirim
+    let sparepartsPrice = 0;
+    if (spareParts && spareParts.length > 0) {
+      sparepartsPrice = spareParts.reduce((sum, part) => sum + (part.price * part.quantity), 0);
+    }
+
+    // Total harga
+    const totalPrice = servicePrice + sparepartsPrice;
+
     const serviceHistory = new ServiceHistory({
       bookingId,
       userId: booking.userId,
@@ -56,11 +67,20 @@ const createServiceHistory = async (req, res) => {
       spareParts,
       mechanicName,
       startDate,
-      totalPrice: totalPrice || 0,
+      servicePrice,
+      sparepartsPrice,
+      totalPrice,
       notes
     });
 
     await serviceHistory.save();
+
+    // Update booking dengan informasi spare parts dan total harga terbaru
+    await Booking.findByIdAndUpdate(bookingId, {
+      sparepartsPrice,
+      totalPrice,
+      updatedAt: Date.now()
+    });
 
     const populatedHistory = await ServiceHistory.findById(serviceHistory._id)
       .populate('userId', 'name email phone')
@@ -192,12 +212,11 @@ const updateServiceHistory = async (req, res) => {
       mechanicName, 
       startDate, 
       endDate, 
-      totalPrice, 
       warrantyExpiry, 
       notes 
     } = req.body;
 
-    const history = await ServiceHistory.findById(req.params.id);
+    const history = await ServiceHistory.findById(req.params.id).populate('bookingId');
 
     if (!history) {
       return res.status(404).json({ 
@@ -214,9 +233,32 @@ const updateServiceHistory = async (req, res) => {
     if (mechanicName !== undefined) history.mechanicName = mechanicName;
     if (startDate !== undefined) history.startDate = startDate;
     if (endDate !== undefined) history.endDate = endDate;
-    if (totalPrice !== undefined) history.totalPrice = totalPrice;
     if (warrantyExpiry !== undefined) history.warrantyExpiry = warrantyExpiry;
     if (notes !== undefined) history.notes = notes;
+    
+    // Recalculate prices jika spareParts berubah
+    if (spareParts !== undefined) {
+      // Kalkulasi sparepartsPrice
+      let sparepartsPrice = 0;
+      if (spareParts && spareParts.length > 0) {
+        sparepartsPrice = spareParts.reduce((sum, part) => sum + (part.price * part.quantity), 0);
+      }
+      
+      // Hitung total dengan servicePrice tetap
+      const totalPrice = history.servicePrice + sparepartsPrice;
+      
+      history.sparepartsPrice = sparepartsPrice;
+      history.totalPrice = totalPrice;
+
+      // Update booking juga dengan harga baru
+      if (history.bookingId) {
+        await Booking.findByIdAndUpdate(history.bookingId._id, {
+          sparepartsPrice,
+          totalPrice,
+          updatedAt: Date.now()
+        });
+      }
+    }
     
     history.updatedAt = Date.now();
 

@@ -35,11 +35,11 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Hitung total harga
-    let totalPrice = 0;
+    // Hitung harga service
+    let servicePrice = 0;
     if (serviceIds && serviceIds.length > 0) {
       const services = await Service.find({ _id: { $in: serviceIds } });
-      totalPrice = services.reduce((sum, service) => sum + service.price, 0);
+      servicePrice = services.reduce((sum, service) => sum + service.price, 0);
     }
 
     const booking = new Booking({
@@ -49,7 +49,9 @@ const createBooking = async (req, res) => {
       bookingDate,
       bookingTime,
       complaint,
-      totalPrice,
+      servicePrice,
+      sparepartsPrice: 0, // Akan diupdate saat service history dibuat
+      totalPrice: servicePrice,
       notes
     });
 
