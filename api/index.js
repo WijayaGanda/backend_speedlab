@@ -2,9 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const passport = require('passport');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
 const cors = require('cors');
-const path = require('path');
 require('dotenv').config();
 const connectDB = require("../lib/mongodb");
 
@@ -29,30 +27,19 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files (uploads folder)
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
 // Koneksi MongoDB
 app.use(async (req, res, next) => {
   await connectDB();
   next();
 });
 
-// SESSION - Menggunakan MongoDB untuk store (production-ready)
+// SESSION
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "secretkey",
     resave: false,
     saveUninitialized: false,
-    store: new MongoStore({
-      mongoUrl: process.env.MONGODB_URI || "mongodb+srv://speedlab:<speedlab>@cluster0.oskgsvi.mongodb.net/?appName=Cluster0",
-      touchAfter: 24 * 3600 // lazy session update (dalam detik)
-    }),
-    cookie: { 
-      secure: process.env.NODE_ENV === 'production', // HTTPS only di production
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 7 // 7 hari
-    },
+    cookie: { secure: false },
   })
 );
 

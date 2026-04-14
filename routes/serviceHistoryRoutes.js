@@ -8,13 +8,9 @@ const {
   getServiceHistoryById,
   getServiceHistoryByBookingId,
   updateServiceHistory,
-  deleteServiceHistory,
-  uploadWorkPhotos,
-  deleteWorkPhoto,
-  updatePhotoDescription
+  deleteServiceHistory
 } = require("../controllers/serviceHistoryController");
 const { authenticate, authorize } = require("../middleware/auth");
-const { uploadServiceHistory } = require("../middleware/uploadMiddleware");
 
 // All routes require authentication
 router.use(authenticate);
@@ -30,10 +26,5 @@ router.get("/:id", getServiceHistoryById);
 router.post("/", authorize('admin'), createServiceHistory);
 router.put("/:id", authorize('admin'), updateServiceHistory);
 router.delete("/:id", authorize('admin'), deleteServiceHistory);
-
-// Photo upload routes (Admin only)
-router.post("/:serviceHistoryId/upload-photos", authorize('admin'), uploadServiceHistory.array('photos', 10), uploadWorkPhotos);
-router.delete("/:serviceHistoryId/photos/:photoIndex", authorize('admin'), deleteWorkPhoto);
-router.put("/:serviceHistoryId/photos/:photoIndex/description", authorize('admin'), updatePhotoDescription);
 
 module.exports = router;

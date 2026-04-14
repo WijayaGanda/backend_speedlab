@@ -40,16 +40,6 @@ const serviceHistorySchema = new mongoose.Schema({
     price: Number,
     quantity: Number
   }],
-  servicePrice: { 
-    type: Number, 
-    default: 0,
-    description: "Harga dari service/jasa saja"
-  },
-  sparepartsPrice: { 
-    type: Number, 
-    default: 0,
-    description: "Total harga spare parts yang digunakan"
-  },
   mechanicName: { 
     type: String 
   },
@@ -61,8 +51,7 @@ const serviceHistorySchema = new mongoose.Schema({
   },
   totalPrice: { 
     type: Number, 
-    default: 0,
-    description: "Total harga = servicePrice + sparepartsPrice"
+    default: 0
   },
   warrantyExpiry: { 
     type: Date 
@@ -70,15 +59,6 @@ const serviceHistorySchema = new mongoose.Schema({
   notes: { 
     type: String 
   },
-  workPhotos: [{
-    filename: String,           // Nama file di server
-    path: String,              // Path file (local: /uploads/..., cloud: URL)
-    uploadedAt: {
-      type: Date,
-      default: Date.now
-    },
-    description: String        // Deskripsi foto (opsional)
-  }],
   createdAt: { 
     type: Date, 
     default: Date.now 

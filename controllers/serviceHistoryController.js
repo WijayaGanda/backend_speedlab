@@ -1,7 +1,5 @@
 const ServiceHistory = require("../model/ServiceHistoryModel");
 const Booking = require("../model/BookingModel");
-const { uploadToSupabase, deleteFromSupabase, deleteServiceHistoryFiles, extractFileNameFromUrl } = require("../middleware/uploadMiddleware");
-const path = require('path');
 
 // Create - Tambah riwayat servis (bisa saat "Sedang Dikerjakan" atau "Selesai")
 const createServiceHistory = async (req, res) => {
@@ -13,6 +11,7 @@ const createServiceHistory = async (req, res) => {
       spareParts, 
       mechanicName, 
       startDate, 
+      totalPrice, 
       notes 
     } = req.body;
 
@@ -45,18 +44,6 @@ const createServiceHistory = async (req, res) => {
       });
     }
 
-    // Kalkulasi servicePrice dari booking serviceIds
-    let servicePrice = booking.servicePrice || 0; // Ambil dari booking yang sudah tersimpan
-
-    // Kalkulasi sparepartsPrice dari spareParts yang dikirim
-    let sparepartsPrice = 0;
-    if (spareParts && spareParts.length > 0) {
-      sparepartsPrice = spareParts.reduce((sum, part) => sum + (part.price * part.quantity), 0);
-    }
-
-    // Total harga
-    const totalPrice = servicePrice + sparepartsPrice;
-
     const serviceHistory = new ServiceHistory({
       bookingId,
       userId: booking.userId,
@@ -69,20 +56,11 @@ const createServiceHistory = async (req, res) => {
       spareParts,
       mechanicName,
       startDate,
-      servicePrice,
-      sparepartsPrice,
-      totalPrice,
+      totalPrice: totalPrice || 0,
       notes
     });
 
     await serviceHistory.save();
-
-    // Update booking dengan informasi spare parts dan total harga terbaru
-    await Booking.findByIdAndUpdate(bookingId, {
-      sparepartsPrice,
-      totalPrice,
-      updatedAt: Date.now()
-    });
 
     const populatedHistory = await ServiceHistory.findById(serviceHistory._id)
       .populate('userId', 'name email phone')
@@ -214,11 +192,12 @@ const updateServiceHistory = async (req, res) => {
       mechanicName, 
       startDate, 
       endDate, 
+      totalPrice, 
       warrantyExpiry, 
       notes 
     } = req.body;
 
-    const history = await ServiceHistory.findById(req.params.id).populate('bookingId');
+    const history = await ServiceHistory.findById(req.params.id);
 
     if (!history) {
       return res.status(404).json({ 
@@ -235,32 +214,9 @@ const updateServiceHistory = async (req, res) => {
     if (mechanicName !== undefined) history.mechanicName = mechanicName;
     if (startDate !== undefined) history.startDate = startDate;
     if (endDate !== undefined) history.endDate = endDate;
+    if (totalPrice !== undefined) history.totalPrice = totalPrice;
     if (warrantyExpiry !== undefined) history.warrantyExpiry = warrantyExpiry;
     if (notes !== undefined) history.notes = notes;
-    
-    // Recalculate prices jika spareParts berubah
-    if (spareParts !== undefined) {
-      // Kalkulasi sparepartsPrice
-      let sparepartsPrice = 0;
-      if (spareParts && spareParts.length > 0) {
-        sparepartsPrice = spareParts.reduce((sum, part) => sum + (part.price * part.quantity), 0);
-      }
-      
-      // Hitung total dengan servicePrice tetap
-      const totalPrice = history.servicePrice + sparepartsPrice;
-      
-      history.sparepartsPrice = sparepartsPrice;
-      history.totalPrice = totalPrice;
-
-      // Update booking juga dengan harga baru
-      if (history.bookingId) {
-        await Booking.findByIdAndUpdate(history.bookingId._id, {
-          sparepartsPrice,
-          totalPrice,
-          updatedAt: Date.now()
-        });
-      }
-    }
     
     history.updatedAt = Date.now();
 
@@ -298,9 +254,6 @@ const deleteServiceHistory = async (req, res) => {
       });
     }
 
-    // Hapus semua file dari Supabase yang terkait
-    await deleteServiceHistoryFiles(history);
-
     res.status(200).json({
       success: true,
       message: "Riwayat servis berhasil dihapus"
@@ -314,210 +267,32 @@ const deleteServiceHistory = async (req, res) => {
   }
 };
 
-// Upload - Upload work progress photos ke Supabase (admin)
-const uploadWorkPhotos = async (req, res) => {
+// Read - Get service history by booking ID
+const getServiceHistoryByBookingId = async (req, res) => {
   try {
-    const { serviceHistoryId } = req.params;
-    const { description } = req.body;
+    const { bookingId } = req.params;
 
-    // Validasi ada files
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Tidak ada file yang diunggah" 
-      });
-    }
-
-    // Validasi service history
-    const history = await ServiceHistory.findById(serviceHistoryId);
-    if (!history) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Service history tidak ditemukan" 
-      });
-    }
-
-    // Upload semua files ke Supabase
-    const uploadPromises = req.files.map((file, index) =>
-      uploadToSupabase(file.buffer, file.originalname, file.mimetype)
-        .then(result => ({
-          ...result,
-          index,
-          description: Array.isArray(description) ? description[index] : description || `Photo ${index + 1}`
-        }))
-    );
-
-    const uploadResults = await Promise.all(uploadPromises);
-
-    // Check jika ada yang gagal
-    const failedUploads = uploadResults.filter(r => !r.success);
-    if (failedUploads.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `${failedUploads.length} dari ${req.files.length} file gagal diunggah`,
-        errors: failedUploads.map((r, idx) => ({ index: idx, error: r.error }))
-      });
-    }
-
-    // Process successful uploads
-    const newPhotos = uploadResults
-      .filter(r => r.success)
-      .map(r => ({
-        filename: r.filename,
-        path: r.path,
-        uploadedAt: new Date(),
-        description: r.description
-      }));
-
-    // Add photos ke workPhotos array
-    if (!history.workPhotos) {
-      history.workPhotos = [];
-    }
-    
-    history.workPhotos.push(...newPhotos);
-    history.updatedAt = Date.now();
-
-    await history.save();
-
-    const updatedHistory = await ServiceHistory.findById(history._id)
+    const history = await ServiceHistory.findOne({ bookingId })
       .populate('userId', 'name email phone')
       .populate('motorcycleId')
       .populate('serviceIds')
       .populate('bookingId');
 
-    res.status(200).json({
-      success: true,
-      message: `${newPhotos.length} foto berhasil diunggah ke Supabase`,
-      data: updatedHistory,
-      uploadedPhotos: newPhotos
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: "Error mengupload foto", 
-      error: error.message 
-    });
-  }
-};
-
-// Delete - Delete single work photo dari Supabase
-const deleteWorkPhoto = async (req, res) => {
-  try {
-    const { serviceHistoryId, photoIndex } = req.params;
-
-    const history = await ServiceHistory.findById(serviceHistoryId);
-
     if (!history) {
       return res.status(404).json({ 
         success: false,
-        message: "Service history tidak ditemukan" 
+        message: "Service history untuk booking ini tidak ditemukan" 
       });
     }
-
-    if (!history.workPhotos || history.workPhotos.length === 0) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Tidak ada foto di service history ini" 
-      });
-    }
-
-    const index = parseInt(photoIndex);
-    if (isNaN(index) || index < 0 || index >= history.workPhotos.length) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Index foto tidak valid" 
-      });
-    }
-
-    // Hapus file dari Supabase
-    const photo = history.workPhotos[index];
-    const fileName = extractFileNameFromUrl(photo.path);
-    
-    if (fileName) {
-      const deleteResult = await deleteFromSupabase(fileName);
-      if (!deleteResult.success) {
-        console.warn(`Warning: Delete dari Supabase gagal - ${deleteResult.error}`);
-        // Tetap lanjutkan, hapus dari DB
-      }
-    }
-
-    // Remove dari array
-    history.workPhotos.splice(index, 1);
-    history.updatedAt = Date.now();
-
-    await history.save();
-
-    const updatedHistory = await ServiceHistory.findById(history._id)
-      .populate('userId', 'name email phone')
-      .populate('motorcycleId')
-      .populate('serviceIds')
-      .populate('bookingId');
 
     res.status(200).json({
       success: true,
-      message: "Foto berhasil dihapus",
-      data: updatedHistory
+      data: history
     });
   } catch (error) {
     res.status(500).json({ 
       success: false,
-      message: "Error menghapus foto", 
-      error: error.message 
-    });
-  }
-};
-
-// Update - Update photo description
-const updatePhotoDescription = async (req, res) => {
-  try {
-    const { serviceHistoryId, photoIndex } = req.params;
-    const { description } = req.body;
-
-    const history = await ServiceHistory.findById(serviceHistoryId);
-
-    if (!history) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Service history tidak ditemukan" 
-      });
-    }
-
-    if (!history.workPhotos || history.workPhotos.length === 0) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Tidak ada foto di service history ini" 
-      });
-    }
-
-    const index = parseInt(photoIndex);
-    if (isNaN(index) || index < 0 || index >= history.workPhotos.length) {
-      return res.status(400).json({ 
-        success: false,
-        message: "Index foto tidak valid" 
-      });
-    }
-
-    if (description !== undefined) {
-      history.workPhotos[index].description = description;
-      history.updatedAt = Date.now();
-      await history.save();
-    }
-
-    const updatedHistory = await ServiceHistory.findById(history._id)
-      .populate('userId', 'name email phone')
-      .populate('motorcycleId')
-      .populate('serviceIds')
-      .populate('bookingId');
-
-    res.status(200).json({
-      success: true,
-      message: "Deskripsi foto berhasil diupdate",
-      data: updatedHistory
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: "Error update deskripsi foto", 
+      message: "Error mengambil riwayat servis", 
       error: error.message 
     });
   }
@@ -531,8 +306,5 @@ module.exports = {
   getServiceHistoryById,
   getServiceHistoryByBookingId,
   updateServiceHistory,
-  deleteServiceHistory,
-  uploadWorkPhotos,
-  deleteWorkPhoto,
-  updatePhotoDescription
+  deleteServiceHistory
 };
