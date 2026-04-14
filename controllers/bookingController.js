@@ -9,6 +9,8 @@ const createBooking = async (req, res) => {
   try {
     const { motorcycleId, serviceIds, bookingDate, bookingTime, complaint, notes } = req.body;
 
+    console.log('📝 Creating booking with:', { motorcycleId, serviceIds, bookingDate, bookingTime });
+
     // Validasi motor milik user
     const motorcycle = await Motorcycle.findOne({ 
       _id: motorcycleId, 
@@ -39,13 +41,18 @@ const createBooking = async (req, res) => {
     let servicePrice = 0;
     if (serviceIds && serviceIds.length > 0) {
       const services = await Service.find({ _id: { $in: serviceIds } });
+      console.log('🔍 Found services:', services.map(s => ({ id: s._id, price: s.price })));
+      
       servicePrice = services.reduce((sum, service) => sum + service.price, 0);
+      console.log('💰 Calculated servicePrice:', servicePrice);
+    } else {
+      console.warn('⚠️ No serviceIds provided');
     }
 
     const booking = new Booking({
       userId: req.user._id,
       motorcycleId,
-      serviceIds,
+      serviceIds: serviceIds || [],
       bookingDate,
       bookingTime,
       complaint,
@@ -55,7 +62,12 @@ const createBooking = async (req, res) => {
       notes
     });
 
-    await booking.save();
+    const savedBooking = await booking.save();
+    console.log('✅ Booking saved:', { 
+      id: savedBooking._id, 
+      servicePrice: savedBooking.servicePrice,
+      totalPrice: savedBooking.totalPrice 
+    });
 
     // // Kirim notifikasi ke semua admin
     // try {
@@ -79,7 +91,7 @@ const createBooking = async (req, res) => {
     //   console.warn('Gagal mengirim notifikasi ke admin:', notifErr.message);
     // }
 
-    const populatedBooking = await Booking.findById(booking._id)
+    const populatedBooking = await Booking.findById(savedBooking._id)
       .populate('userId', 'name email phone')
       .populate('motorcycleId')
       .populate('serviceIds');
@@ -90,6 +102,7 @@ const createBooking = async (req, res) => {
       data: populatedBooking
     });
   } catch (error) {
+    console.error('❌ Error creating booking:', error);
     res.status(500).json({ 
       success: false,
       message: "Error membuat booking", 

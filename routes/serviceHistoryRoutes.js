@@ -8,7 +8,9 @@ const {
   getServiceHistoryById,
   getServiceHistoryByBookingId,
   updateServiceHistory,
-  deleteServiceHistory
+  deleteServiceHistory,
+  upload,
+  uploadWorkPhotos
 } = require("../controllers/serviceHistoryController");
 const { authenticate, authorize } = require("../middleware/auth");
 
@@ -26,5 +28,8 @@ router.get("/:id", getServiceHistoryById);
 router.post("/", authorize('admin'), createServiceHistory);
 router.put("/:id", authorize('admin'), updateServiceHistory);
 router.delete("/:id", authorize('admin'), deleteServiceHistory);
+
+// Admin route untuk upload foto service menggunakan route dengan param :id
+router.post("/:id/upload-photos", authorize('admin'), upload.array('photos', 10), uploadWorkPhotos);
 
 module.exports = router;

@@ -1,5 +1,97 @@
 const ServiceHistory = require("../model/ServiceHistoryModel");
 const Booking = require("../model/BookingModel");
+const { createClient } = require('@supabase/supabase-js');
+const multer = require('multer');
+
+// Setup Supabase
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY; // Bisa anon key atau service role key
+let supabase = null;
+
+if (supabaseUrl && supabaseKey) {
+  supabase = createClient(supabaseUrl, supabaseKey);
+} else {
+  console.warn("⚠️ SUPABASE_URL atau SUPABASE_KEY tidak ditemukan di .env");
+}
+
+// Setup Multer (Memory Storage untuk Vercel / Serverless)
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // Limit 5MB per file
+});
+
+// Upload Photos
+const uploadWorkPhotos = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const files = req.files; 
+    let descriptions = req.body.description || [];
+
+    if (!supabase) {
+      return res.status(500).json({ success: false, message: "Server storage belum dikonfigurasi" });
+    }
+
+    if (typeof descriptions === 'string') {
+      descriptions = [descriptions];
+    }
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ success: false, message: "Tidak ada foto yang diunggah" });
+    }
+
+    const history = await ServiceHistory.findById(id);
+    if (!history) {
+      return res.status(404).json({ success: false, message: "Riwayat servis tidak ditemukan" });
+    }
+
+    if (!history.workPhotos) history.workPhotos = [];
+
+    // Proses upload
+    const uploadPromises = files.map(async (file, index) => {
+      const fileExt = file.originalname.split('.').pop();
+      const fileName = `servicehistory-${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
+      const filePath = `photos/${fileName}`;
+
+      const { data, error } = await supabase.storage
+        .from('service-history')
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) {
+        console.error("Supabase Error:", error);
+        throw new Error(error.message);
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('service-history')
+        .getPublicUrl(filePath);
+
+      return {
+        filename: fileName,
+        path: urlData.publicUrl,
+        uploadedAt: new Date(),
+        description: descriptions[index] || ""
+      };
+    });
+
+    const newPhotos = await Promise.all(uploadPromises);
+
+    history.workPhotos.push(...newPhotos);
+    await history.save();
+
+    res.status(200).json({
+      success: true,
+      message: `${newPhotos.length} foto berhasil diunggah ke Supabase`,
+      data: history
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error mengunggah foto", error: error.message });
+  }
+};
 
 // Create - Tambah riwayat servis (bisa saat "Sedang Dikerjakan" atau "Selesai")
 const createServiceHistory = async (req, res) => {
@@ -348,5 +440,7 @@ module.exports = {
   getServiceHistoryById,
   getServiceHistoryByBookingId,
   updateServiceHistory,
-  deleteServiceHistory
+  deleteServiceHistory,
+  upload,
+  uploadWorkPhotos
 };
