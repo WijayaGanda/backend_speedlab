@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const passport = require('passport');
 const session = require('express-session');
+const MongoStore = require('connect-mongo');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
@@ -34,13 +35,21 @@ mongoose.connect(process.env.MONGODB_URI || "mongodb+srv://speedlab:<speedlab>@c
   .then(() => console.log('MongoDB connected successfully'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// SESSION
+// SESSION - Menggunakan MongoDB untuk store (production-ready)
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "secretkey",
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false },
+    store: new MongoStore({
+      mongoUrl: process.env.MONGODB_URI || "mongodb+srv://speedlab:<speedlab>@cluster0.oskgsvi.mongodb.net/?appName=Cluster0",
+      touchAfter: 24 * 3600 // lazy session update (dalam detik)
+    }),
+    cookie: { 
+      secure: process.env.NODE_ENV === 'production', // HTTPS only di production
+      httpOnly: true,
+      maxAge: 1000 * 60 * 60 * 24 * 7 // 7 hari
+    },
   })
 );
 
