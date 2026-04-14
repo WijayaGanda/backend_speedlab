@@ -1,6 +1,6 @@
 const ServiceHistory = require("../model/ServiceHistoryModel");
 const Booking = require("../model/BookingModel");
-const { deleteLocalFile, deleteLocalFiles, deleteServiceHistoryFiles } = require("../middleware/uploadMiddleware");
+const { deleteLocalFile, deleteLocalFiles, deleteServiceHistoryFiles, isProduction } = require("../middleware/uploadMiddleware");
 const path = require('path');
 
 // Create - Tambah riwayat servis (bisa saat "Sedang Dikerjakan" atau "Selesai")
@@ -317,6 +317,15 @@ const deleteServiceHistory = async (req, res) => {
 // Upload - Upload work progress photos (admin)
 const uploadWorkPhotos = async (req, res) => {
   try {
+    // Production warning: File upload tidak fully supported di serverless environment
+    if (isProduction) {
+      return res.status(503).json({ 
+        success: false,
+        message: "File upload feature sedang dalam maintenance. Untuk production, gunakan cloud storage (AWS S3, Azure Blob, dll)",
+        note: "Hubungi developer untuk implementasi cloud storage"
+      });
+    }
+
     const { serviceHistoryId } = req.params;
     const { description } = req.body;
 

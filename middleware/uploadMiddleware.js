@@ -2,27 +2,43 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+// Environment check
+const isProduction = process.env.NODE_ENV === 'production';
+
 // =============================================
-// OPTION 1: LOCAL STORAGE (Default)
+// OPTION 1: LOCAL STORAGE (Default - Development)
 // =============================================
 
-// Buat folder uploads jika belum ada
-const uploadDir = path.join(__dirname, '../uploads/service-history');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+let uploadDir;
+let localStorage;
 
-// Configure storage untuk local file
-const localStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    // Format: servicehistory-{bookingId}-{timestamp}-{originalname}
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'servicehistory-' + uniqueSuffix + path.extname(file.originalname));
+if (!isProduction) {
+  // Buat folder uploads jika belum ada (hanya untuk development)
+  uploadDir = path.join(__dirname, '../uploads/service-history');
+  
+  // Safe mkdir dengan recursive
+  try {
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+  } catch (error) {
+    console.warn('Warning: Tidak bisa membuat upload directory:', error.message);
   }
-});
+
+  // Configure storage untuk local file
+  localStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, 'servicehistory-' + uniqueSuffix + path.extname(file.originalname));
+    }
+  });
+} else {
+  // Production: Gunakan memory storage (temporary)
+  localStorage = multer.memoryStorage();
+}
 
 // File filter - hanya terima gambar
 const fileFilter = (req, file, cb) => {
@@ -52,7 +68,13 @@ const uploadServiceHistory = multer({
 // HELPER FUNCTION: Hapus file lokal
 // =============================================
 const deleteLocalFile = (filename) => {
+  if (isProduction) {
+    // Di production, file ada di memory, tidak perlu delete
+    return;
+  }
+  
   try {
+    if (!uploadDir) return;
     const filePath = path.join(uploadDir, filename);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
@@ -85,5 +107,6 @@ module.exports = {
   deleteLocalFile,
   deleteLocalFiles,
   deleteServiceHistoryFiles,
-  uploadDir
+  uploadDir,
+  isProduction
 };
