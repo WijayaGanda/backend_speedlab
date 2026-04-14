@@ -40,6 +40,16 @@ const serviceHistorySchema = new mongoose.Schema({
     price: Number,
     quantity: Number
   }],
+  servicePrice: { 
+    type: Number, 
+    default: 0,
+    description: "Harga dari service/jasa saja"
+  },
+  sparepartsPrice: { 
+    type: Number, 
+    default: 0,
+    description: "Total harga spare parts yang digunakan"
+  },
   mechanicName: { 
     type: String 
   },
@@ -51,7 +61,8 @@ const serviceHistorySchema = new mongoose.Schema({
   },
   totalPrice: { 
     type: Number, 
-    default: 0
+    default: 0,
+    description: "Total harga = servicePrice + sparepartsPrice"
   },
   warrantyExpiry: { 
     type: Date 
