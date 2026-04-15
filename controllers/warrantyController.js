@@ -104,46 +104,22 @@ const getUserWarrantyClaims = async (req, res) => {
   }
 };
 
-// Read - Get single warranty claim or by bookingId
+// Read - Get single warranty claim or by serviceHistoryId
 const getWarrantyClaimById = async (req, res) => {
   try {
     const id = req.params.id;
-    let warranty;
     
-    // Check if the id is a valid ObjectId, otherwise it might be a query attempt
-    // Currently, finding by ID directly. If we want finding by bookingId, 
-    // it's best to handle it by checking if it matches the Warranty _id
-    // OR we can make a separate function, but since you asked to make the ID one accept bookingId,
-    // let's check ServiceHistory with that bookingId first
-    
-    warranty = await Warranty.findById(id)
+    // Cari berdasarkan ID Warranty itu sendiri ATAU serviceHistoryId
+    const warranty = await Warranty.findOne({
+      $or: [
+        { _id: id },
+        { serviceHistoryId: id }
+      ]
+    })
       .populate('userId', 'name email phone')
       .populate('motorcycleId')
       .populate('serviceHistoryId')
-      .populate({
-        path: 'serviceHistoryId',
-        populate: { path: 'bookingId' }
-      })
       .populate('verifiedBy', 'name');
-
-    // Jika tidak ketemu berdasarkan Warranty ID, coba cari berdasar bookingId via ServiceHistory
-    if (!warranty) {
-      // 1. Cari ServiceHistory yang punya bookingId tersebut
-      const serviceHistory = await ServiceHistory.findOne({ bookingId: id });
-      
-      // 2. Jika ketemu, cari Warranty yang mengacu ke serviceHistoryId itu
-      if (serviceHistory) {
-        warranty = await Warranty.findOne({ serviceHistoryId: serviceHistory._id })
-          .populate('userId', 'name email phone')
-          .populate('motorcycleId')
-          .populate('serviceHistoryId')
-          .populate({
-            path: 'serviceHistoryId',
-            populate: { path: 'bookingId' }
-          })
-          .populate('verifiedBy', 'name');
-      }
-    }
 
     if (!warranty) {
       return res.status(404).json({ 
