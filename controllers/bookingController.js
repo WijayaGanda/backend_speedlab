@@ -2,7 +2,7 @@ const Booking = require("../model/BookingModel");
 const Motorcycle = require("../model/MotorcycleModel");
 const Service = require("../model/ServiceModel");
 const User = require("../model/UserModel");
-// const { sendNotificationToUser } = require("../lib/notificationHelper");
+const { sendNotificationToUser } = require("../lib/notificationHelper");
 
 // Create - Buat booking baru
 const createBooking = async (req, res) => {
@@ -69,27 +69,31 @@ const createBooking = async (req, res) => {
       totalPrice: savedBooking.totalPrice 
     });
 
-    // // Kirim notifikasi ke semua admin
-    // try {
-    //   const admins = await User.find({ 
-    //     role: { $in: ['admin', 'pemilik'] },
-    //     isActive: true 
-    //   }).select('_id name');
-      
-    //   if (admins && admins.length > 0) {
-    //     const formattedDate = new Date(bookingDate).toLocaleDateString('id-ID');
-    //     const motorcycleName = `${motorcycle.brand} ${motorcycle.model}`;
-        
-    //     for (const admin of admins) {
-    //       await sendNotificationToUser(admin._id, {
-    //         title: '🔔 Booking Baru Masuk!',
-    //         body: `${req.user.name} membuat booking untuk ${motorcycleName}. Tanggal: ${formattedDate} ${bookingTime}. Total: Rp ${totalPrice.toLocaleString('id-ID')}`
-    //       }, { type: 'booking', relatedId: booking._id, relatedModel: 'Booking' });
-    //     }
-    //   }
-    // } catch (notifErr) {
-    //   console.warn('Gagal mengirim notifikasi ke admin:', notifErr.message);
-    // }
+    // Kirim notifikasi ke semua admin/pemilik ketika ada booking baru.
+    try {
+      const admins = await User.find({
+        role: { $in: ['admin', 'pemilik'] },
+        isActive: true
+      }).select('_id');
+
+      if (admins && admins.length > 0) {
+        const formattedDate = new Date(bookingDate).toLocaleDateString('id-ID');
+        const motorcycleName = `${motorcycle.brand} ${motorcycle.model}`;
+
+        for (const admin of admins) {
+          await sendNotificationToUser(
+            admin._id,
+            {
+              title: 'Booking Baru Masuk',
+              body: `${req.user.name} membuat booking ${motorcycleName} pada ${formattedDate} ${bookingTime}`
+            },
+            { type: 'booking', relatedId: savedBooking._id, relatedModel: 'Booking' }
+          );
+        }
+      }
+    } catch (notifErr) {
+      console.warn('Gagal mengirim notifikasi ke admin:', notifErr.message);
+    }
 
     const populatedBooking = await Booking.findById(savedBooking._id)
       .populate('userId', 'name email phone')
@@ -245,6 +249,19 @@ const verifyBooking = async (req, res) => {
 
     await booking.save();
 
+    try {
+      await sendNotificationToUser(
+        booking.userId,
+        {
+          title: 'Booking Terverifikasi',
+          body: `Booking Anda telah diverifikasi admin dan siap diproses.`
+        },
+        { type: 'booking', relatedId: booking._id, relatedModel: 'Booking' }
+      );
+    } catch (notifErr) {
+      console.warn('Gagal mengirim notifikasi verifikasi booking:', notifErr.message);
+    }
+
     const updatedBooking = await Booking.findById(booking._id)
       .populate('userId', 'name email phone')
       .populate('motorcycleId')
@@ -315,23 +332,22 @@ const updateBookingStatus = async (req, res) => {
       });
     }
 
-    // // Kirim notifikasi ke user hanya untuk status "Sedang Dikerjakan" dan "Selesai"
-    // try {
-    //   if (status === 'Sedang Dikerjakan') {
-    //     await sendNotificationToUser(booking.userId._id, {
-    //       title: '🔧 Booking Sedang Dikerjakan',
-    //       body: `Booking untuk ${booking.motorcycleId.brand} ${booking.motorcycleId.model} sedang dikerjakan...`
-    //     }, { type: 'booking', relatedId: booking._id, relatedModel: 'Booking' });
-    //   } else if (status === 'Selesai') {
-    //     const finalPrice = booking.finalCost || booking.totalPrice;
-    //     await sendNotificationToUser(booking.userId._id, {
-    //       title: '✅ Booking Selesai!',
-    //       body: `Selesai! Total: Rp ${finalPrice.toLocaleString('id-ID')}. Ambil motor Anda.`
-    //     }, { type: 'booking', relatedId: booking._id, relatedModel: 'Booking' });
-    //   }
-    // } catch (notifErr) {
-    //   console.warn('Gagal mengirim notifikasi ke user:', notifErr.message);
-    // }
+    try {
+      const motorcycleName = booking.motorcycleId
+        ? `${booking.motorcycleId.brand} ${booking.motorcycleId.model}`
+        : 'motor Anda';
+
+      await sendNotificationToUser(
+        booking.userId._id,
+        {
+          title: `Status Booking: ${status}`,
+          body: `Booking ${motorcycleName} sekarang berstatus ${status}.`
+        },
+        { type: 'booking', relatedId: booking._id, relatedModel: 'Booking' }
+      );
+    } catch (notifErr) {
+      console.warn('Gagal mengirim notifikasi ke user:', notifErr.message);
+    }
 
     res.status(200).json({
       success: true,
