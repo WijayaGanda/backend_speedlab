@@ -284,13 +284,27 @@ const sendToUser = async (req, res) => {
       { type, relatedId, relatedModel }
     );
 
+    const tokenResults = Array.isArray(result.fcm.responses) ? result.fcm.responses : [];
+    const fcmFailures = tokenResults
+      .map((item, index) => {
+        if (item.success) return null;
+        return {
+          index,
+          code: item.error?.code || null,
+          message: item.error?.message || 'Unknown FCM error'
+        };
+      })
+      .filter(Boolean);
+
     res.status(201).json({
       success: true,
       message: 'Notification sent successfully',
       data: result.notification,
       fcmResponse: {
+        totalTokensTargeted: tokenResults.length,
         successCount: result.fcm.successCount || 0,
-        failureCount: result.fcm.failureCount || 0
+        failureCount: result.fcm.failureCount || 0,
+        failures: fcmFailures
       }
     });
   } catch (error) {
