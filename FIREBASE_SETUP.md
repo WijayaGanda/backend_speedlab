@@ -4,6 +4,263 @@
 
 ---
 
+## Flutter Setup Khusus Notifikasi (FCM)
+
+Bagian ini fokus untuk tim Flutter agar bisa langsung implement push notification ke aplikasi mobile dan terhubung ke endpoint backend:
+
+- POST /api/notifications/register-device
+- POST /api/notifications/unregister-device
+
+### Prasyarat
+
+1. Flutter SDK sudah terinstall.
+2. Android Studio/Xcode sudah siap untuk build.
+3. Firebase Project sudah dibuat.
+4. Backend notifikasi sudah running.
+
+### 1) Tambahkan aplikasi Android dan iOS di Firebase
+
+1. Buka Firebase Console.
+2. Pilih project Anda.
+3. Tambah app Android:
+   - Android package name harus sama dengan applicationId di project Flutter.
+4. Tambah app iOS:
+   - Bundle identifier harus sama dengan Runner di Xcode.
+
+### 2) Download file konfigurasi Firebase
+
+1. Download google-services.json, letakkan di android/app/google-services.json.
+2. Download GoogleService-Info.plist, letakkan di ios/Runner/GoogleService-Info.plist.
+
+### 3) Install package Flutter
+
+Tambahkan dependency di pubspec.yaml:
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^3.8.1
+  firebase_messaging: ^15.2.10
+  flutter_local_notifications: ^17.2.3
+  http: ^1.2.2
+```
+
+Lalu jalankan:
+
+```bash
+flutter pub get
+```
+
+### 4) Konfigurasi Android
+
+Pastikan minSdkVersion minimal 21 di android/app/build.gradle.
+
+Tambahkan permission notifikasi untuk Android 13+ di android/app/src/main/AndroidManifest.xml:
+
+```xml
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+```
+
+### 5) Konfigurasi iOS
+
+1. Buka ios/Runner.xcworkspace dengan Xcode.
+2. Aktifkan capability:
+   - Push Notifications
+   - Background Modes -> Remote notifications
+3. Jika build iOS, jalankan:
+
+```bash
+cd ios
+pod install
+cd ..
+```
+
+### 6) Inisialisasi Firebase + Handler Notifikasi
+
+Buat file lib/services/push_notification_service.dart:
+
+```dart
+import 'dart:convert';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
+
+class PushNotificationService {
+  PushNotificationService._();
+  static final PushNotificationService instance = PushNotificationService._();
+
+  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
+
+  Future<void> initialize() async {
+    await Firebase.initializeApp();
+
+    await _requestPermission();
+    await _initLocalNotification();
+
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      await _showForegroundNotification(message);
+    });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      _handleTap(message);
+    });
+
+    final initialMessage = await _messaging.getInitialMessage();
+    if (initialMessage != null) {
+      _handleTap(initialMessage);
+    }
+
+    _messaging.onTokenRefresh.listen((newToken) {
+      // Panggil backend agar token terbaru tersimpan
+      // registerDevice(authToken, backendBaseUrl);
+    });
+  }
+
+  Future<void> _requestPermission() async {
+    await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+  }
+
+  Future<void> _initLocalNotification() async {
+    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const ios = DarwinInitializationSettings();
+    const settings = InitializationSettings(android: android, iOS: ios);
+    await _local.initialize(settings);
+  }
+
+  Future<void> _showForegroundNotification(RemoteMessage message) async {
+    final title = message.notification?.title ?? 'Notifikasi';
+    final body = message.notification?.body ?? '';
+
+    const androidDetails = AndroidNotificationDetails(
+      'speedlab_booking_channel',
+      'Booking Notification',
+      channelDescription: 'Notifikasi update booking',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const iosDetails = DarwinNotificationDetails();
+
+    await _local.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title,
+      body,
+      const NotificationDetails(android: androidDetails, iOS: iosDetails),
+      payload: jsonEncode(message.data),
+    );
+  }
+
+  void _handleTap(RemoteMessage message) {
+    final data = message.data;
+    final type = data['type'];
+    final relatedId = data['relatedId'];
+
+    // Contoh routing:
+    // if (type == 'booking' && relatedId != null) {
+    //   navigatorKey.currentState?.pushNamed('/booking-detail', arguments: relatedId);
+    // }
+  }
+
+  Future<String?> getFcmToken() async => _messaging.getToken();
+
+  Future<void> registerDevice(String authToken, String backendBaseUrl) async {
+    final token = await getFcmToken();
+    if (token == null) return;
+
+    await http.post(
+      Uri.parse('$backendBaseUrl/api/notifications/register-device'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      },
+      body: jsonEncode({
+        'fcmToken': token,
+        'deviceName': 'Flutter Device',
+        'platform': 'android',
+      }),
+    );
+  }
+
+  Future<void> unregisterDevice(String authToken, String backendBaseUrl) async {
+    final token = await getFcmToken();
+    if (token == null) return;
+
+    await http.post(
+      Uri.parse('$backendBaseUrl/api/notifications/unregister-device'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      },
+      body: jsonEncode({'fcmToken': token}),
+    );
+  }
+}
+```
+
+### 7) Panggil inisialisasi di main.dart
+
+```dart
+import 'package:flutter/material.dart';
+import 'services/push_notification_service.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await PushNotificationService.instance.initialize();
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'SpeedLab',
+      home: const Scaffold(body: Center(child: Text('SpeedLab App'))),
+    );
+  }
+}
+```
+
+### 8) Kapan register dan unregister device
+
+1. Setelah login sukses dan token JWT tersedia -> panggil registerDevice.
+2. Saat logout -> panggil unregisterDevice.
+3. Saat token refresh dari Firebase -> kirim token baru ke backend.
+
+### 9) Checklist testing Flutter
+
+1. Jalankan app di device fisik.
+2. Print token dari getFcmToken dan pastikan tidak null.
+3. Panggil register-device, cek response success true.
+4. Lakukan event backend (misalnya booking baru/status update).
+5. Pastikan notifikasi masuk saat foreground dan background.
+6. Tap notifikasi, pastikan routing sesuai type dan relatedId.
+
+### 10) Catatan penting produksi
+
+1. Jangan hardcode backend URL, gunakan environment/flavor.
+2. Jangan kirim data sensitif di payload FCM.
+3. Selalu simpan notifikasi ke database (sudah dilakukan backend Anda).
+4. iOS butuh APNs key/certificate valid di Firebase agar push terkirim.
+5. Android emulator tidak selalu konsisten untuk push, prioritas test di device fisik.
+
+---
+
 ## Part 1: Firebase Project Setup
 
 ### Step 1: Create Firebase Project

@@ -287,7 +287,11 @@ const sendToUser = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Notification sent successfully',
-      data: result.notification
+      data: result.notification,
+      fcmResponse: {
+        successCount: result.fcm.successCount || 0,
+        failureCount: result.fcm.failureCount || 0
+      }
     });
   } catch (error) {
     res.status(500).json({
@@ -329,7 +333,10 @@ const sendToMultipleUsers = async (req, res) => {
       summary: {
         totalRequested: summary.totalRequested,
         successCount: summary.successCount,
-        failureCount: summary.failureCount
+        failureCount: summary.failureCount,
+        totalTokensTargeted: summary.totalTokensTargeted,
+        fcmSuccessCount: summary.fcmSuccessCount,
+        fcmFailureCount: summary.fcmFailureCount
       },
       results: summary.results
     });
@@ -395,8 +402,8 @@ const sendBroadcast = async (req, res) => {
         totalUsersTargeted: userIds.length,
         totalDevicesTargeted,
         fcmResponse: {
-          successCount: summary.successCount,
-          failureCount: summary.failureCount
+          successCount: summary.fcmSuccessCount,
+          failureCount: summary.fcmFailureCount
         }
       }
     });

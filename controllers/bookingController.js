@@ -81,7 +81,7 @@ const createBooking = async (req, res) => {
         const motorcycleName = `${motorcycle.brand} ${motorcycle.model}`;
 
         for (const admin of admins) {
-          await sendNotificationToUser(
+          const notifResult = await sendNotificationToUser(
             admin._id,
             {
               title: 'Booking Baru Masuk',
@@ -89,6 +89,12 @@ const createBooking = async (req, res) => {
             },
             { type: 'booking', relatedId: savedBooking._id, relatedModel: 'Booking' }
           );
+
+          console.log('🔔 Admin notification result:', {
+            adminId: admin._id.toString(),
+            successCount: notifResult.fcm.successCount || 0,
+            failureCount: notifResult.fcm.failureCount || 0
+          });
         }
       }
     } catch (notifErr) {
