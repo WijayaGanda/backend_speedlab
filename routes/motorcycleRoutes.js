@@ -19,7 +19,7 @@ router.use(authenticate);
 router.get("/stats/summary", authorize('admin', 'pemilik'), getMotorcycleStats);
 
 // Customer routes
-router.post("/", authorize('pelanggan'), createMotorcycle);
+router.post("/", authorize('pelanggan', 'admin', 'pemilik'), createMotorcycle);
 router.get("/my-motorcycles", authorize('pelanggan'), getUserMotorcycles);
 
 // Admin routes
