@@ -7,14 +7,29 @@ const { sendNotificationToUser } = require("../lib/notificationHelper");
 // Create - Buat booking baru
 const createBooking = async (req, res) => {
   try {
-    const { motorcycleId, serviceIds, bookingDate, bookingTime, complaint, notes } = req.body;
+    const { motorcycleId, serviceIds, bookingDate, bookingTime, complaint, notes, userId } = req.body;
 
     console.log('📝 Creating booking with:', { motorcycleId, serviceIds, bookingDate, bookingTime });
 
-    // Validasi motor milik user
+    // Tentukan userId: jika admin mengirim userId, gunakan itu. Jika tidak, gunakan userId dari token
+    let targetUserId = req.user._id;
+    
+    // Jika userId dikirim dalam request body
+    if (userId) {
+      // Cek apakah user yang login adalah admin atau pemilik
+      if (req.user.role !== 'admin' && req.user.role !== 'pemilik') {
+        return res.status(403).json({ 
+          success: false,
+          message: "Hanya admin/pemilik yang dapat membuat booking untuk user lain" 
+        });
+      }
+      targetUserId = userId;
+    }
+
+    // Validasi motor milik user yang akan membuat booking
     const motorcycle = await Motorcycle.findOne({ 
       _id: motorcycleId, 
-      userId: req.user._id 
+      userId: targetUserId 
     });
 
     if (!motorcycle) {
@@ -50,7 +65,7 @@ const createBooking = async (req, res) => {
     }
 
     const booking = new Booking({
-      userId: req.user._id,
+      userId: targetUserId,
       motorcycleId,
       serviceIds: serviceIds || [],
       bookingDate,

@@ -23,7 +23,7 @@ router.use(authenticate);
 router.get("/stats/summary", authorize('admin', 'pemilik'), getBookingStats);
 
 // Customer routes
-router.post("/", authorize('pelanggan'), createBooking);
+router.post("/", authorize('pelanggan', 'admin', 'pemilik'), createBooking);
 router.get("/my-bookings", authorize('pelanggan'), getUserBookings);
 router.get("/my-bookings/by-date", authorize('pelanggan'), getUserBookingsByDate);
 router.patch("/:id/cancel", authorize('pelanggan'), cancelBooking);
