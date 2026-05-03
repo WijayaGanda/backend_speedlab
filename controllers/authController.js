@@ -301,25 +301,25 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // Generate reset token (32 bytes random)
-    const resetToken = crypto.randomBytes(32).toString('hex');
+    // Generate OTP (6 digit angka)
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
     
-    // Set token dan expiry (1 jam dari sekarang)
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 jam
+    // Set token (OTP) dan expiry (15 menit dari sekarang)
+    user.resetPasswordToken = otp;
+    user.resetPasswordExpires = new Date(Date.now() + 15 * 60000); // 15 menit
     await user.save();
 
-    // Dalam production seharusnya kirim email dengan link reset
-    // const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-    // await sendEmail({ to: user.email, subject: 'Reset Password', html: resetUrl });
+    // Dalam production seharusnya kirim email berisi OTP
+    // const message = `Kode OTP reset password Anda adalah: ${otp}`;
+    // await sendEmail({ to: user.email, subject: 'OTP Reset Password', text: message });
 
     res.status(200).json({
       success: true,
-      message: "Link reset password telah dikirim ke email Anda",
-      // Untuk development/testing, return token (HAPUS di production!)
+      message: "Kode OTP reset password telah dikirim ke email Anda",
+      // Untuk development/testing, return OTP (HAPUS di production!)
       data: {
-        resetToken: resetToken,
-        expiresIn: "1 jam"
+        otp: otp,
+        expiresIn: "15 menit"
       }
     });
   } catch (error) {
@@ -331,15 +331,15 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// Reset Password - Update password dengan token
+// Reset Password - Update password dengan OTP
 const resetPassword = async (req, res) => {
   try {
-    const { token, newPassword } = req.body;
+    const { otp, newPassword } = req.body;
 
-    if (!token || !newPassword) {
+    if (!otp || !newPassword) {
       return res.status(400).json({ 
         success: false,
-        message: "Token dan password baru diperlukan" 
+        message: "OTP dan password baru diperlukan" 
       });
     }
 
@@ -351,16 +351,16 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    // Cari user dengan token yang valid dan belum expired
+    // Cari user dengan OTP yang valid dan belum expired
     const user = await User.findOne({
-      resetPasswordToken: token,
+      resetPasswordToken: otp,
       resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
       return res.status(400).json({ 
         success: false,
-        message: "Token tidak valid atau sudah expired" 
+        message: "Kode OTP tidak valid atau sudah expired" 
       });
     }
 

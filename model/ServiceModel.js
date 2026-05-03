@@ -20,6 +20,10 @@ const serviceSchema = new mongoose.Schema({
     type: Boolean, 
     default: true 
   },
+  isWaitable: { 
+    type: Boolean, 
+    default: true 
+  },
   createdAt: { 
     type: Date, 
     default: Date.now 

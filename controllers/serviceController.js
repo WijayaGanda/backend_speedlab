@@ -3,13 +3,14 @@ const Service = require("../model/ServiceModel");
 // Create - Tambah layanan baru
 const createService = async (req, res) => {
   try {
-    const { name, description, price, estimatedDuration } = req.body;
+    const { name, description, price, estimatedDuration, isWaitable } = req.body;
 
     const service = new Service({
       name,
       description,
       price,
-      estimatedDuration
+      estimatedDuration,
+      isWaitable
     });
 
     await service.save();
@@ -81,7 +82,7 @@ const getServiceById = async (req, res) => {
 // Update - Update service
 const updateService = async (req, res) => {
   try {
-    const { name, description, price, estimatedDuration, isActive } = req.body;
+    const { name, description, price, estimatedDuration, isActive, isWaitable } = req.body;
 
     const service = await Service.findByIdAndUpdate(
       req.params.id,
@@ -91,6 +92,7 @@ const updateService = async (req, res) => {
         price, 
         estimatedDuration, 
         isActive,
+        isWaitable,
         updatedAt: Date.now() 
       },
       { new: true }

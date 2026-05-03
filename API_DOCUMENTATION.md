@@ -79,18 +79,18 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "message": "Link reset password telah dikirim ke email Anda",
+  "message": "Kode OTP reset password telah dikirim ke email Anda",
   "data": {
-    "resetToken": "abc123def456...",
-    "expiresIn": "1 jam"
+    "otp": "234567",
+    "expiresIn": "15 menit"
   }
 }
 ```
 
 **Notes:**
 - Email harus terdaftar di sistem
-- Token reset berlaku selama 1 jam
-- Di production, link reset akan dikirim via email (untuk sekarang token di-return untuk testing)
+- OTP berlaku selama 15 menit
+- Di production, OTP akan dikirim via email (untuk sekarang OTP di-return untuk testing)
 
 #### Reset Password
 ```http
@@ -98,7 +98,7 @@ POST /api/auth/reset-password
 Content-Type: application/json
 
 {
-  "token": "abc123def456...",
+  "otp": "234567",
   "newPassword": "passwordBaru123"
 }
 ```
@@ -112,7 +112,7 @@ Content-Type: application/json
 ```
 
 **Notes:**
-- Token harus valid dan belum expired (maksimal 1 jam)
+- Kode OTP harus valid dan belum expired (maksimal 15 menit)
 - Password minimal 6 karakter
 - Setelah reset, user dapat login dengan password baru
 
