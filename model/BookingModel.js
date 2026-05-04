@@ -11,10 +11,22 @@ const bookingSchema = new mongoose.Schema({
     ref: "Motorcycle", 
     required: true 
   },
+
+  // Support BOTH format lama dan baru
+  // Format lama: serviceIds (masih bisa dipakai, akan auto-convert ke bookingDetails)
   serviceIds: [{ 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: "Service" 
+    ref: "Service",
+    default: []
   }],
+
+  // Format baru: bookingDetails (dengan varian & add-ons)
+  bookingDetails: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "BookingDetail",
+    default: []
+  }],
+  
   bookingDate: { 
     type: Date, 
     required: true 
@@ -41,7 +53,7 @@ const bookingSchema = new mongoose.Schema({
   servicePrice: { 
     type: Number, 
     default: 0,
-    description: "Harga dari service/jasa saja"
+    description: "Total harga dari service + varian + add-ons"
   },
   sparepartsPrice: { 
     type: Number, 

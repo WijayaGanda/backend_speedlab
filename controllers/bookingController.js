@@ -4,12 +4,12 @@ const Service = require("../model/ServiceModel");
 const User = require("../model/UserModel");
 const { sendNotificationToUser } = require("../lib/notificationHelper");
 
-// Create - Buat booking baru
+// Create - Buat booking baru (support both old fixed price dan new flexible format)
 const createBooking = async (req, res) => {
   try {
-    const { motorcycleId, serviceIds, bookingDate, bookingTime, complaint, notes, userId } = req.body;
+    const { motorcycleId, serviceIds, bookingServices, bookingDate, bookingTime, complaint, notes, userId } = req.body;
 
-    console.log('📝 Creating booking with:', { motorcycleId, serviceIds, bookingDate, bookingTime });
+    console.log('📝 Creating booking with:', { motorcycleId, serviceIds, bookingServices, bookingDate, bookingTime });
 
     // Tentukan userId: jika admin mengirim userId, gunakan itu. Jika tidak, gunakan userId dari token
     let targetUserId = req.user._id;
@@ -52,22 +52,98 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Hitung harga service
+    // ========== AUTO-DETECT FORMAT ==========
+    let isFlexibleFormat = bookingServices && bookingServices.length > 0;
     let servicePrice = 0;
-    if (serviceIds && serviceIds.length > 0) {
-      const services = await Service.find({ _id: { $in: serviceIds } });
-      console.log('🔍 Found services:', services.map(s => ({ id: s._id, price: s.price })));
-      
-      servicePrice = services.reduce((sum, service) => sum + service.price, 0);
-      console.log('💰 Calculated servicePrice:', servicePrice);
+    let bookingDetailsData = [];
+
+    if (isFlexibleFormat) {
+      // NEW FORMAT - Flexible dengan variants dan addons
+      console.log('✨ Using FLEXIBLE format with bookingServices');
+
+      for (const item of bookingServices) {
+        const { serviceId, selectedVariant, selectedAddons = [] } = item;
+
+        const service = await Service.findById(serviceId);
+        if (!service) {
+          return res.status(400).json({
+            success: false,
+            message: `Layanan dengan ID ${serviceId} tidak ditemukan`
+          });
+        }
+
+        // Calculate price: basePrice + variant modifier + addons total
+        let itemPrice = service.basePrice || service.price || 0;
+
+        // Add variant modifier jika ada
+        if (selectedVariant) {
+          const variant = service.variants.find(v => v.name === selectedVariant);
+          if (variant) {
+            itemPrice += variant.priceModifier;
+            console.log(`  ✅ Added variant "${selectedVariant}": +${variant.priceModifier}`);
+          }
+        }
+
+        // Add addons price
+        let addonsTotal = 0;
+        const addonDetails = [];
+        for (const addon of selectedAddons) {
+          const { addonId, quantity = 1 } = addon;
+          const addonData = service.availableAddons.find(a => a.id.toString() === addonId);
+          
+          if (addonData) {
+            const addonPrice = addonData.price * quantity;
+            addonsTotal += addonPrice;
+            addonDetails.push({
+              id: addonData.id,
+              name: addonData.name,
+              price: addonData.price,
+              quantity,
+              subtotal: addonPrice
+            });
+            console.log(`  ✅ Added addon "${addonData.name}": Rp${addonPrice}`);
+          }
+        }
+        itemPrice += addonsTotal;
+
+        // Store booking detail
+        bookingDetailsData.push({
+          serviceId,
+          serviceName: service.name,
+          basePrice: service.basePrice || service.price || 0,
+          selectedVariant: selectedVariant || null,
+          selectedAddons: addonDetails,
+          addonsTotal,
+          subtotal: itemPrice
+        });
+
+        servicePrice += itemPrice;
+        console.log(`  💰 Service item total: Rp${itemPrice}`);
+      }
+
     } else {
-      console.warn('⚠️ No serviceIds provided');
+      // OLD FORMAT - Fixed price, menggunakan serviceIds
+      console.log('📌 Using OLD format with serviceIds');
+
+      if (serviceIds && serviceIds.length > 0) {
+        const services = await Service.find({ _id: { $in: serviceIds } });
+        console.log('🔍 Found services:', services.map(s => ({ id: s._id, price: s.price || s.basePrice })));
+        
+        servicePrice = services.reduce((sum, service) => {
+          const price = service.price || service.basePrice || 0;
+          return sum + price;
+        }, 0);
+        
+        console.log('💰 Calculated servicePrice from serviceIds:', servicePrice);
+      } else {
+        console.warn('⚠️ No serviceIds provided in old format');
+      }
     }
 
-    const booking = new Booking({
+    // ========== CREATE BOOKING OBJECT ==========
+    const bookingObject = {
       userId: targetUserId,
       motorcycleId,
-      serviceIds: serviceIds || [],
       bookingDate,
       bookingTime,
       complaint,
@@ -75,16 +151,26 @@ const createBooking = async (req, res) => {
       sparepartsPrice: 0, // Akan diupdate saat service history dibuat
       totalPrice: servicePrice,
       notes
-    });
+    };
 
+    // Tambahkan field sesuai format
+    if (isFlexibleFormat) {
+      bookingObject.bookingDetails = bookingDetailsData;
+    } else {
+      bookingObject.serviceIds = serviceIds || [];
+    }
+
+    const booking = new Booking(bookingObject);
     const savedBooking = await booking.save();
+
     console.log('✅ Booking saved:', { 
       id: savedBooking._id, 
+      format: isFlexibleFormat ? 'FLEXIBLE' : 'FIXED',
       servicePrice: savedBooking.servicePrice,
       totalPrice: savedBooking.totalPrice 
     });
 
-    // Kirim notifikasi ke semua admin/pemilik ketika ada booking baru.
+    // ========== SEND NOTIFICATION TO ADMINS ==========
     try {
       const admins = await User.find({
         role: { $in: ['admin', 'pemilik'] },
@@ -116,6 +202,7 @@ const createBooking = async (req, res) => {
       console.warn('Gagal mengirim notifikasi ke admin:', notifErr.message);
     }
 
+    // ========== POPULATE AND RETURN ==========
     const populatedBooking = await Booking.findById(savedBooking._id)
       .populate('userId', 'name email phone')
       .populate('motorcycleId')
