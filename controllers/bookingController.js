@@ -11,6 +11,16 @@ const createBooking = async (req, res) => {
 
     console.log('📝 Creating booking with:', { motorcycleId, serviceIds, bookingServices, bookingDate, bookingTime });
 
+    const hasServiceIds = Array.isArray(serviceIds) && serviceIds.length > 0;
+    const hasBookingServices = Array.isArray(bookingServices) && bookingServices.length > 0;
+
+    if (!hasServiceIds && !hasBookingServices) {
+      return res.status(400).json({
+        success: false,
+        message: "Kirim serviceIds untuk format lama atau bookingServices untuk format flexible"
+      });
+    }
+
     // Tentukan userId: jika admin mengirim userId, gunakan itu. Jika tidak, gunakan userId dari token
     let targetUserId = req.user._id;
     
@@ -53,7 +63,7 @@ const createBooking = async (req, res) => {
     }
 
     // ========== AUTO-DETECT FORMAT ==========
-    let isFlexibleFormat = bookingServices && bookingServices.length > 0;
+    let isFlexibleFormat = hasBookingServices;
     let servicePrice = 0;
     let bookingDetailsData = [];
 
@@ -125,7 +135,7 @@ const createBooking = async (req, res) => {
       // OLD FORMAT - Fixed price, menggunakan serviceIds
       console.log('📌 Using OLD format with serviceIds');
 
-      if (serviceIds && serviceIds.length > 0) {
+      if (hasServiceIds) {
         const services = await Service.find({ _id: { $in: serviceIds } });
         console.log('🔍 Found services:', services.map(s => ({ id: s._id, price: s.price || s.basePrice })));
         

@@ -13,18 +13,49 @@ const bookingSchema = new mongoose.Schema({
   },
 
   // Support BOTH format lama dan baru
-  // Format lama: serviceIds (masih bisa dipakai, akan auto-convert ke bookingDetails)
+  // Format lama: serviceIds (masih bisa dipakai, backward compatibility)
   serviceIds: [{ 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: "Service",
-    default: []
+    ref: "Service"
   }],
 
-  // Format baru: bookingDetails (dengan varian & add-ons)
+  // Format baru: bookingDetails (embedded objects dengan varian & add-ons breakdown)
   bookingDetails: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "BookingDetail",
-    default: []
+    serviceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Service"
+    },
+    serviceName: {
+      type: String,
+      required: true
+    },
+    basePrice: {
+      type: Number,
+      required: true
+    },
+    selectedVariant: {
+      type: String,
+      default: null
+    },
+    selectedAddons: [{
+      id: {
+        type: mongoose.Schema.Types.ObjectId
+      },
+      name: String,
+      price: Number,
+      quantity: Number,
+      subtotal: Number,
+      _id: false
+    }],
+    addonsTotal: {
+      type: Number,
+      default: 0
+    },
+    subtotal: {
+      type: Number,
+      required: true
+    },
+    _id: false
   }],
   
   bookingDate: { 
