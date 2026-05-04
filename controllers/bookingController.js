@@ -4,6 +4,22 @@ const Service = require("../model/ServiceModel");
 const User = require("../model/UserModel");
 const { sendNotificationToUser } = require("../lib/notificationHelper");
 
+const formatBookingResponse = (booking) => {
+  if (!booking) return booking;
+
+  const bookingObject = booking.toObject ? booking.toObject() : booking;
+
+  return {
+    ...bookingObject,
+    bookingDetails: Array.isArray(bookingObject.bookingDetails)
+      ? bookingObject.bookingDetails
+      : [],
+    serviceIds: Array.isArray(bookingObject.serviceIds)
+      ? bookingObject.serviceIds
+      : []
+  };
+};
+
 // Create - Buat booking baru (support both old fixed price dan new flexible format)
 const createBooking = async (req, res) => {
   try {
@@ -221,7 +237,7 @@ const createBooking = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Booking berhasil dibuat",
-      data: populatedBooking
+      data: formatBookingResponse(populatedBooking)
     });
   } catch (error) {
     console.error('❌ Error creating booking:', error);
@@ -268,7 +284,7 @@ const getAllBookings = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: bookings
+      data: bookings.map(formatBookingResponse)
     });
   } catch (error) {
     res.status(500).json({ 
@@ -298,7 +314,7 @@ const getUserBookings = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: bookings
+      data: bookings.map(formatBookingResponse)
     });
   } catch (error) {
     res.status(500).json({ 
@@ -327,7 +343,7 @@ const getBookingById = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: booking
+      data: formatBookingResponse(booking)
     });
   } catch (error) {
     res.status(500).json({ 
@@ -389,7 +405,7 @@ const verifyBooking = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Booking berhasil diverifikasi",
-      data: updatedBooking
+      data: formatBookingResponse(updatedBooking)
     });
   } catch (error) {
     res.status(500).json({ 
