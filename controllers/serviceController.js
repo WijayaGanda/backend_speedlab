@@ -319,9 +319,9 @@ const deleteVariant = async (req, res) => {
 // Add addon to service
 const addAddon = async (req, res) => {
   try {
-    const { name, price, type = "OPTIONAL", description = "", maxQuantity = 1 } = req.body;
+    const { addonName, price, type = "OPTIONAL", addonDescription = "", maxQuantity = 1 } = req.body;
 
-    if (!name || price === undefined) {
+    if (!addonName || price === undefined) {
       return res.status(400).json({
         success: false,
         message: "Nama dan harga addon harus diisi"
@@ -346,10 +346,10 @@ const addAddon = async (req, res) => {
     const mongoose = require("mongoose");
     service.availableAddons.push({
       id: new mongoose.Types.ObjectId(),
-      name,
+      name: addonName,
       price,
       type,
-      description,
+      description: addonDescription,
       maxQuantity
     });
 
@@ -373,7 +373,7 @@ const addAddon = async (req, res) => {
 const updateAddon = async (req, res) => {
   try {
     const { addonId } = req.params;
-    const { name, price, type, description, maxQuantity } = req.body;
+    const { addonName, price, type, addonDescription, maxQuantity } = req.body;
 
     const service = await Service.findById(req.params.id);
     if (!service) {
@@ -391,10 +391,10 @@ const updateAddon = async (req, res) => {
       });
     }
 
-    if (name !== undefined) addon.name = name;
+    if (addonName !== undefined) addon.name = addonName;
     if (price !== undefined) addon.price = price;
     if (type !== undefined) addon.type = type;
-    if (description !== undefined) addon.description = description;
+    if (addonDescription !== undefined) addon.description = addonDescription;
     if (maxQuantity !== undefined) addon.maxQuantity = maxQuantity;
 
     await service.save();
