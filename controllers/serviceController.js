@@ -463,7 +463,7 @@ const createServiceWithDetails = async (req, res) => {
       estimatedDuration,
       isWaitable = false,
       variants = [],
-      addons = []
+      availableAddons = []
     } = req.body;
 
     // Validasi required fields
@@ -510,10 +510,10 @@ const createServiceWithDetails = async (req, res) => {
     }
 
     // 3. Tambah addons jika ada
-    if (addons && addons.length > 0) {
+    if (availableAddons && availableAddons.length > 0) {
       const mongoose = require("mongoose");
 
-      for (const addon of addons) {
+      for (const addon of availableAddons) {
         const { addonName, price, type = "OPTIONAL", addonDescription = "", maxQuantity = 1 } = addon;
 
         if (!addonName || price === undefined) {
