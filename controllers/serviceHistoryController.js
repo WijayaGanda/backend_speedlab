@@ -135,7 +135,26 @@ const createServiceHistory = async (req, res) => {
       });
     }
 
-    // Kalkulasi servicePrice dari booking serviceIds
+    // Extract serviceIds dari booking
+    // Jika format flexible: ambil dari bookingDetails
+    // Jika format lama: ambil dari serviceIds
+    let serviceIdsToSave = [];
+    
+    if (booking.bookingDetails && booking.bookingDetails.length > 0) {
+      // Format flexible
+      serviceIdsToSave = booking.bookingDetails
+        .map(detail => detail.serviceId)
+        .filter(id => id); // Filter out undefined/null
+      console.log('✨ Extracted serviceIds dari bookingDetails:', serviceIdsToSave);
+    } else if (booking.serviceIds && booking.serviceIds.length > 0) {
+      // Format lama
+      serviceIdsToSave = booking.serviceIds;
+      console.log('📌 Using serviceIds dari format lama:', serviceIdsToSave);
+    } else {
+      console.warn('⚠️ Tidak ada serviceIds ditemukan di booking');
+    }
+
+    // Kalkulasi servicePrice dari booking
     let servicePrice = booking.servicePrice || 0; // Ambil dari booking yang sudah tersimpan
 
     // Kalkulasi sparepartsPrice dari spareParts yang dikirim
@@ -151,7 +170,7 @@ const createServiceHistory = async (req, res) => {
       bookingId,
       userId: booking.userId,
       motorcycleId: booking.motorcycleId._id,
-      serviceIds: booking.serviceIds,
+      serviceIds: serviceIdsToSave,
       complaint: booking.complaint,
       status: 'Dimulai',
       diagnosis,
