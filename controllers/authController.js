@@ -69,12 +69,12 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Cari user berdasarkan email
+    // Cari user berdasarkan email dan phone
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ 
         success: false,
-        message: "Email atau password salah" 
+        message: "Email atau phone atau password salah" 
       });
     }
 
@@ -82,7 +82,7 @@ const login = async (req, res) => {
     if (user.password !== password) {
       return res.status(401).json({ 
         success: false,
-        message: "Email atau password salah" 
+        message: "Email atau phone atau password salah" 
       });
     }
 

@@ -23,7 +23,15 @@ const notificationRoutes = require("../routes/notificationRoutes");
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://speedlabpelanggan-test.netlify.app', // Domain Netlify kamu (Penting!)
+    'http://localhost:3000',                      // Untuk testing lokal web (opsional)
+    'http://localhost:8080'                       
+  ],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // Wajib ada PATCH
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
