@@ -26,7 +26,7 @@ router.get("/stats/summary", authorize('admin', 'pemilik'), getBookingStats);
 router.post("/", authorize('pelanggan', 'admin', 'pemilik'), createBooking);
 router.get("/my-bookings", authorize('pelanggan'), getUserBookings);
 router.get("/my-bookings/by-date", authorize('pelanggan'), getUserBookingsByDate);
-router.patch("/:id/cancel", authorize('pelanggan'), cancelBooking);
+router.post("/:id/cancel", authorize('pelanggan'), cancelBooking);
 
 // Routes untuk melihat ketersediaan booking pada tanggal tertentu (accessible untuk pelanggan, admin, pemilik)
 router.get("/by-date", getBookingsByDate);
