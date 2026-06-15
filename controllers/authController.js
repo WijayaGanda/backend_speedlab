@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../middleware/auth');
 const { OAuth2Client } = require('google-auth-library');
 const crypto = require('crypto');
+const sendEmail = require("../lib/sendEmail");
 
 const client = new OAuth2Client("220972392486-kf83vi2vioc9n89nps3p2evdire1rotn.apps.googleusercontent.com");
 
@@ -309,18 +310,22 @@ const forgotPassword = async (req, res) => {
     user.resetPasswordExpires = new Date(Date.now() + 15 * 60000); // 15 menit
     await user.save();
 
-    // Dalam production seharusnya kirim email berisi OTP
-    // const message = `Kode OTP reset password Anda adalah: ${otp}`;
-    // await sendEmail({ to: user.email, subject: 'OTP Reset Password', text: message });
+    const pesan = `Halo,\n\nKode OTP untuk mereset password aplikasi Speedlab Anda adalah:\n\n${otp}\n\nKode ini akan hangus dalam 15 menit. Jika Anda tidak merasa meminta reset password, abaikan pesan ini.`;
+
+    await sendEmail({
+      email: user.email,
+      subject: 'Speedlab - Kode OTP Reset Password',
+      message: pesan,
+    });
 
     res.status(200).json({
       success: true,
       message: "Kode OTP reset password telah dikirim ke email Anda",
       // Untuk development/testing, return OTP (HAPUS di production!)
-      data: {
-        otp: otp,
-        expiresIn: "15 menit"
-      }
+      // data: {
+      //   otp: otp,
+      //   expiresIn: "15 menit"
+      // }
     });
   } catch (error) {
     res.status(500).json({ 
