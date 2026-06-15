@@ -336,6 +336,45 @@ const forgotPassword = async (req, res) => {
   }
 };
 
+// Verifikasi OTP (Hanya mengecek validitas)
+const verifyOtp = async (req, res) => {
+  try {
+    const { otp } = req.body;
+
+    if (!otp) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Kode OTP diperlukan" 
+      });
+    }
+
+    // Cari user yang punya OTP tersebut dan belum kedaluwarsa
+    const user = await User.findOne({
+      resetPasswordToken: otp,
+      resetPasswordExpires: { $gt: Date.now() } // Waktu saat ini harus lebih kecil dari waktu expired
+    });
+
+    if (!user) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Kode OTP salah atau sudah kedaluwarsa" 
+      });
+    }
+
+    // Jika lolos, kirim response sukses
+    res.status(200).json({
+      success: true,
+      message: "Kode OTP valid"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      message: "Error saat verifikasi OTP", 
+      error: error.message 
+    });
+  }
+};
+
 // Reset Password - Update password dengan OTP
 const resetPassword = async (req, res) => {
   try {
@@ -461,5 +500,6 @@ module.exports = {
   updateProfile,
   forgotPassword,
   resetPassword,
-  changePassword
+  changePassword,
+  verifyOtp
 };

@@ -8,7 +8,8 @@ const {
   updateProfile,
   forgotPassword,
   resetPassword,
-  changePassword
+  changePassword,
+  verifyOtp
 } = require("../controllers/authController");
 const { authenticate } = require("../middleware/auth");
 
@@ -18,7 +19,7 @@ router.post("/login", login);
 router.post("/google", googleLogin);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
-
+router.post("/verify-otp", verifyOtp);
 // Protected routes
 router.get("/profile", authenticate, getProfile);
 router.put("/profile", authenticate, updateProfile);
