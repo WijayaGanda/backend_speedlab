@@ -127,6 +127,7 @@ exports.handleWebhook = async (req, res) => {
         }
 
         // Logika penentuan status
+        // Logika penentuan status
         if (transactionStatus == 'capture' || transactionStatus == 'settlement') {
             if (fraudStatus == 'challenge') {
                 payment.transactionStatus = 'pending';
@@ -138,8 +139,15 @@ exports.handleWebhook = async (req, res) => {
                     status: 'Terverifikasi'
                 });
             }
-        } else if (transactionStatus == 'cancel' || transactionStatus == 'deny' || transactionStatus == 'expire') {
+        } else if (transactionStatus == 'cancel' || transactionStatus == 'deny' || transactionStatus == 'expired' || transactionStatus == 'expire') {
             payment.transactionStatus = transactionStatus; // Batal/Kadaluarsa
+
+            // 🔥 TAMBAHAN BARU: Otomatis batalkan booking di database
+            await Booking.findByIdAndUpdate(payment.bookingId, {
+                status: 'Dibatalkan' // Pastikan string ini sama persis dengan enum di BookingModel Anda
+            });
+            console.log(`[Webhook] Booking ${payment.bookingId} dibatalkan karena payment ${transactionStatus}`);
+            
         } else if (transactionStatus == 'pending') {
             payment.transactionStatus = 'pending';
         }
@@ -186,6 +194,7 @@ exports.checkPaymentStatus = async (req, res) => {
             const statusResponse = await coreApi.transaction.status(payment.orderId);
             
             // Update status di database jika ada perubahan
+            // Update status di database jika ada perubahan
             if (statusResponse.transaction_status !== payment.transactionStatus) {
                 payment.transactionStatus = statusResponse.transaction_status;
                 payment.paymentType = statusResponse.payment_type || payment.paymentType;
@@ -195,6 +204,12 @@ exports.checkPaymentStatus = async (req, res) => {
                 if (statusResponse.transaction_status === 'settlement') {
                     await Booking.findByIdAndUpdate(payment.bookingId, {
                         status: 'Terverifikasi'
+                    });
+                } 
+                // 🔥 TAMBAHAN BARU: Sinkronisasi pembatalan saat dicheck manual
+                else if (['cancel', 'deny', 'expired', 'expire'].includes(statusResponse.transaction_status)) {
+                    await Booking.findByIdAndUpdate(payment.bookingId, {
+                        status: 'Dibatalkan' 
                     });
                 }
             }
