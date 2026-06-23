@@ -1,7 +1,21 @@
 const ServiceHistory = require("../model/ServiceHistoryModel");
 const Booking = require("../model/BookingModel");
+const Payment = require("../model/PaymentModel");
 const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
+
+const calculateFinalTotalAfterDp = (servicePrice = 0, sparepartsPrice = 0, downPayment = 0) => {
+  return Math.max((servicePrice || 0) + (sparepartsPrice || 0) - (downPayment || 0), 0);
+};
+
+const getPaidDownPayment = async (bookingId) => {
+  const settledPayment = await Payment.findOne({
+    bookingId,
+    transactionStatus: 'settlement'
+  }).sort({ updatedAt: -1 });
+
+  return settledPayment ? (settledPayment.grossAmount || 0) : 0;
+};
 
 // Setup Supabase
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -163,8 +177,9 @@ const createServiceHistory = async (req, res) => {
       sparepartsPrice = spareParts.reduce((sum, part) => sum + (part.price * part.quantity), 0);
     }
 
-    // Total harga
-    const totalPrice = servicePrice + sparepartsPrice;
+    // Total harga akhir dikurangi DP yang sudah dibayar
+    const paidDownPayment = await getPaidDownPayment(bookingId);
+    const totalPrice = calculateFinalTotalAfterDp(servicePrice, sparepartsPrice, paidDownPayment);
 
     const serviceHistory = new ServiceHistory({
       bookingId,
@@ -355,8 +370,9 @@ const updateServiceHistory = async (req, res) => {
         sparepartsPrice = spareParts.reduce((sum, part) => sum + (part.price * part.quantity), 0);
       }
       
-      // Hitung total dengan servicePrice tetap
-      const totalPrice = history.servicePrice + sparepartsPrice;
+      // Hitung total akhir dengan servicePrice tetap dan tetap dikurangi DP yang sudah dibayar
+      const paidDownPayment = await getPaidDownPayment(history.bookingId._id);
+      const totalPrice = calculateFinalTotalAfterDp(history.servicePrice, sparepartsPrice, paidDownPayment);
       
       history.sparepartsPrice = sparepartsPrice;
       history.totalPrice = totalPrice;

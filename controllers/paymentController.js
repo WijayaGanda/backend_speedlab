@@ -3,6 +3,24 @@ const crypto = require('crypto');
 const Payment = require('../model/PaymentModel');
 const Booking = require('../model/BookingModel'); 
 
+const calculateFinalTotalAfterDp = (servicePrice = 0, sparepartsPrice = 0, downPayment = 0) => {
+    return Math.max((servicePrice || 0) + (sparepartsPrice || 0) - (downPayment || 0), 0);
+};
+
+const buildPaymentBreakdown = (booking, payment) => {
+    const servicePrice = booking?.servicePrice || 0;
+    const sparepartsPrice = booking?.sparepartsPrice || 0;
+    const totalBeforeDp = servicePrice + sparepartsPrice;
+    const dpPaid = payment?.transactionStatus === 'settlement' ? (payment?.grossAmount || 0) : 0;
+    const remainingPayment = Math.max(totalBeforeDp - dpPaid, 0);
+
+    return {
+        totalBeforeDp,
+        dpPaid,
+        remainingPayment
+    };
+};
+
 // Inisialisasi Midtrans Snap
 const snap = new midtransClient.Snap({
     isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
@@ -45,11 +63,15 @@ exports.createPayment = async (req, res) => {
         if (existingPayment) {
             // Jika sudah ada token yang pending, kembalikan token yang lama (biar user bisa lanjut bayar)
             if (existingPayment.transactionStatus === 'pending') {
+                const paymentBreakdown = buildPaymentBreakdown(booking, existingPayment);
+
                 return res.status(200).json({
                     success: true,
                     message: "Gunakan tagihan yang sudah ada",
                     token: existingPayment.snapToken,
-                    redirect_url: existingPayment.snapRedirectUrl
+                    redirect_url: existingPayment.snapRedirectUrl,
+                    dpPaid: paymentBreakdown.dpPaid,
+                    remainingPayment: paymentBreakdown.remainingPayment
                 });
             }
             return res.status(400).json({ success: false, message: "Booking ini sudah lunas!" });
@@ -89,11 +111,15 @@ exports.createPayment = async (req, res) => {
         });
         await newPayment.save();
 
+        const paymentBreakdown = buildPaymentBreakdown(booking, newPayment);
+
         // 8. Kirim URL pembayaran kembali ke Flutter
         res.status(200).json({
             success: true,
             token: transaction.token,
-            redirect_url: transaction.redirect_url
+            redirect_url: transaction.redirect_url,
+            dpPaid: paymentBreakdown.dpPaid,
+            remainingPayment: paymentBreakdown.remainingPayment
         });
 
     } catch (error) {
@@ -135,9 +161,21 @@ exports.handleWebhook = async (req, res) => {
                 payment.transactionStatus = 'settlement'; // LUNAS!
                 
                 // UPDATE JUGA STATUS BOOKING OTOMATIS JADI TERVERIFIKASI
-                await Booking.findByIdAndUpdate(payment.bookingId, {
-                    status: 'Terverifikasi'
-                });
+                const booking = await Booking.findById(payment.bookingId);
+
+                if (booking) {
+                    const updatedTotalPrice = calculateFinalTotalAfterDp(
+                        booking.servicePrice,
+                        booking.sparepartsPrice,
+                        payment.grossAmount
+                    );
+
+                    await Booking.findByIdAndUpdate(payment.bookingId, {
+                        status: 'Terverifikasi',
+                        totalPrice: updatedTotalPrice,
+                        updatedAt: Date.now()
+                    });
+                }
             }
         } else if (transactionStatus == 'cancel' || transactionStatus == 'deny' || transactionStatus == 'expired' || transactionStatus == 'expire') {
             payment.transactionStatus = transactionStatus; // Batal/Kadaluarsa
@@ -202,9 +240,21 @@ exports.checkPaymentStatus = async (req, res) => {
 
                 // Update booking status jika payment settlement
                 if (statusResponse.transaction_status === 'settlement') {
-                    await Booking.findByIdAndUpdate(payment.bookingId, {
-                        status: 'Terverifikasi'
-                    });
+                    const booking = await Booking.findById(payment.bookingId);
+
+                    if (booking) {
+                        const updatedTotalPrice = calculateFinalTotalAfterDp(
+                            booking.servicePrice,
+                            booking.sparepartsPrice,
+                            payment.grossAmount
+                        );
+
+                        await Booking.findByIdAndUpdate(payment.bookingId, {
+                            status: 'Terverifikasi',
+                            totalPrice: updatedTotalPrice,
+                            updatedAt: Date.now()
+                        });
+                    }
                 } 
                 // 🔥 TAMBAHAN BARU: Sinkronisasi pembatalan saat dicheck manual
                 else if (['cancel', 'deny', 'expired', 'expire'].includes(statusResponse.transaction_status)) {
@@ -228,6 +278,7 @@ exports.checkPaymentStatus = async (req, res) => {
                 paymentType: payment.paymentType,
                 snapToken: payment.snapToken,
                 snapRedirectUrl: payment.snapRedirectUrl,
+                ...buildPaymentBreakdown(payment.bookingId, payment),
                 createdAt: payment.createdAt,
                 updatedAt: payment.updatedAt
             }
@@ -259,14 +310,24 @@ exports.getPaymentHistory = async (req, res) => {
         // Admin bisa lihat semua payment history
 
         const payments = await Payment.find(query)
-            .populate('bookingId', 'bookingDate bookingTime status totalPrice')
+            .populate('bookingId', 'bookingDate bookingTime status totalPrice servicePrice sparepartsPrice')
             .populate('userId', 'name email phone')
             .sort({ createdAt: -1 });
+
+        const paymentsWithBreakdown = payments.map((payment) => {
+            const paymentObject = payment.toObject();
+            const breakdown = buildPaymentBreakdown(paymentObject.bookingId, paymentObject);
+
+            return {
+                ...paymentObject,
+                ...breakdown
+            };
+        });
 
         res.status(200).json({
             success: true,
             count: payments.length,
-            data: payments
+            data: paymentsWithBreakdown
         });
 
     } catch (error) {
