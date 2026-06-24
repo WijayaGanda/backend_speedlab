@@ -726,7 +726,7 @@ const cancelBooking = async (req, res) => {
             title: 'Booking Anda Dibatalkan',
             body: `Mohon maaf, booking untuk ${motorcycleName} pada ${formattedDate} telah dibatalkan oleh Admin bengkel.`
           },
-          { type: 'booking_cancelled', relatedId: savedBooking._id.toString(), relatedModel: 'Booking' }
+          { type: 'booking', relatedId: savedBooking._id.toString(), relatedModel: 'Booking' }
         );
         console.log(`🔔 Notifikasi pembatalan dikirim ke pelanggan: ${booking.userId.name}`);
         
@@ -745,7 +745,7 @@ const cancelBooking = async (req, res) => {
                 title: 'Booking Dibatalkan Pelanggan',
                 body: `${req.user.name} telah membatalkan jadwal booking ${motorcycleName} pada ${formattedDate}.`
               },
-              { type: 'booking_cancelled', relatedId: savedBooking._id.toString(), relatedModel: 'Booking' }
+              { type: 'booking', relatedId: savedBooking._id.toString(), relatedModel: 'Booking' }
             );
           }
           console.log(`🔔 Notifikasi pembatalan dari pelanggan dikirim ke ${admins.length} Admin`);
