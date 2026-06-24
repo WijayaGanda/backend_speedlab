@@ -4,6 +4,9 @@ const Service = require("../model/ServiceModel");
 const User = require("../model/UserModel");
 const { sendNotificationToUser } = require("../lib/notificationHelper");
 
+const OperatingHour = require('../model/OperatingHourModel');
+const ScheduleException = require('../model/ScheduleExceptionModel');
+
 const formatBookingResponse = (booking) => {
   if (!booking) return booking;
 
