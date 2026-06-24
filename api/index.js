@@ -19,6 +19,7 @@ const warrantyRoutes = require("../routes/warrantyRoutes");
 const employeeRoutes = require("../routes/employeeRoutes");
 const paymentRoutes = require('../routes/paymentRoutes');
 const notificationRoutes = require("../routes/notificationRoutes");
+const operatingHoursRoutes = require("../routes/operatingHoursRoutes");
 
 const app = express();
 
@@ -65,7 +66,7 @@ app.use("/api/warranties", warrantyRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use("/api/notifications", notificationRoutes);
-
+app.use("/api/operating-hours", operatingHoursRoutes);
 // GOOGLE LOGIN (keep existing for backward compatibility)
 app.get(
   "/auth/google",
@@ -103,7 +104,8 @@ app.get("/", (req, res) => {
       warranties: "/api/warranties",
       employees: "/api/employees",
       payment: "/api/payment",
-      notifications: "/api/notifications"
+      notifications: "/api/notifications",
+      operatingHours: "/api/operating-hours"
     }
   });
 });
