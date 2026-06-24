@@ -3,6 +3,10 @@ const ScheduleException = require('../model/ScheduleExceptionModel');
 exports.getExceptionByDate = async (req, res) => {
   try {
     const { date } = req.query;
+    if (!date) {
+      const allExceptions = await ScheduleException.find();
+      return res.status(200).json({ success: true, data: allExceptions });
+    }
     const exception = await ScheduleException.findOne({ date: date });
     
     if (!exception) {
