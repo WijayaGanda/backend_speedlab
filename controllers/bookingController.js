@@ -684,11 +684,14 @@ const cancelBooking = async (req, res) => {
       });
     }
 
-    // Cek apakah booking milik customer yang login
-    if (booking.userId._id.toString() !== req.user._id.toString()) {
+    const isOwner = booking.userId._id.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'pemilik';
+
+    // Cek akses: Harus pemilik booking ATAU Admin/Pemilik
+    if (!isOwner && !isAdmin) {
       return res.status(403).json({ 
         success: false,
-        message: "Anda hanya bisa membatalkan booking milik Anda sendiri" 
+        message: "Anda tidak memiliki akses untuk membatalkan booking ini" 
       });
     }
 
@@ -699,6 +702,57 @@ const cancelBooking = async (req, res) => {
         success: false,
         message: `Booking dengan status '${booking.status}' tidak dapat dibatalkan` 
       });
+    }
+
+    // Update status menjadi Dibatalkan
+    booking.status = 'Dibatalkan';
+    booking.updatedAt = Date.now();
+    const savedBooking = await booking.save();
+
+    // ======================================================================
+    // 🔥 LOGIKA NOTIFIKASI PEMBATALAN 🔥
+    // ======================================================================
+    try {
+      const formattedDate = new Date(booking.bookingDate).toLocaleDateString('id-ID');
+      const motorcycleName = booking.motorcycleId 
+        ? `${booking.motorcycleId.brand} ${booking.motorcycleId.model}` 
+        : 'Motor';
+
+      if (isAdmin && !isOwner) {
+        // JIKA ADMIN YANG MEMBATALKAN -> Kirim notif ke pelanggan
+        await sendNotificationToUser(
+          booking.userId._id,
+          {
+            title: 'Booking Anda Dibatalkan',
+            body: `Mohon maaf, booking untuk ${motorcycleName} pada ${formattedDate} telah dibatalkan oleh Admin bengkel.`
+          },
+          { type: 'booking_cancelled', relatedId: savedBooking._id.toString(), relatedModel: 'Booking' }
+        );
+        console.log(`🔔 Notifikasi pembatalan dikirim ke pelanggan: ${booking.userId.name}`);
+        
+      } else {
+        // JIKA PELANGGAN YANG MEMBATALKAN -> Kirim notif ke semua Admin & Pemilik
+        const admins = await User.find({
+          role: { $in: ['admin', 'pemilik'] },
+          isActive: true
+        }).select('_id');
+
+        if (admins && admins.length > 0) {
+          for (const admin of admins) {
+            await sendNotificationToUser(
+              admin._id,
+              {
+                title: 'Booking Dibatalkan Pelanggan',
+                body: `${req.user.name} telah membatalkan jadwal booking ${motorcycleName} pada ${formattedDate}.`
+              },
+              { type: 'booking_cancelled', relatedId: savedBooking._id.toString(), relatedModel: 'Booking' }
+            );
+          }
+          console.log(`🔔 Notifikasi pembatalan dari pelanggan dikirim ke ${admins.length} Admin`);
+        }
+      }
+    } catch (notifErr) {
+      console.warn('⚠️ Gagal mengirim notifikasi pembatalan:', notifErr.message);
     }
 
     // Update status menjadi Dibatalkan
