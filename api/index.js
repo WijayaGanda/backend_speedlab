@@ -19,7 +19,7 @@ const warrantyRoutes = require("../routes/warrantyRoutes");
 const employeeRoutes = require("../routes/employeeRoutes");
 const paymentRoutes = require('../routes/paymentRoutes');
 const notificationRoutes = require("../routes/notificationRoutes");
-const operatingHoursRoutes = require("../routes/operatingHoursRoutes");
+const operatingHoursRoutes = require("../routes/operatingHourRoutes");
 
 const app = express();
 
