@@ -112,12 +112,16 @@ const createBooking = async (req, res) => {
 
     // 5. Validasi Jam Sesuai Sesi/Rentang Waktu (timeSlots)
     let isTimeValid = false;
-    if (activeSchedule.timeSlots && activeSchedule.timeSlots.length > 0) {
-      for (let slot of activeSchedule.timeSlots) {
-        // String format "HH:mm" bisa langsung dibandingkan
-        if (bookingTime >= slot.openTime && bookingTime <= slot.closeTime) {
-          isTimeValid = true;
-          break; // Keluar dari loop jika sudah ketemu slot yang cocok
+    if (bookingTime === "00:00") {
+      isTimeValid = true; 
+    } else {
+      if (activeSchedule.timeSlots && activeSchedule.timeSlots.length > 0) {
+        for (let slot of activeSchedule.timeSlots) {
+          // String format "HH:mm" bisa langsung dibandingkan
+          if (bookingTime >= slot.openTime && bookingTime <= slot.closeTime) {
+            isTimeValid = true;
+            break; // Keluar dari loop jika sudah ketemu slot yang cocok
+          }
         }
       }
     }
