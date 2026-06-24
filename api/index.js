@@ -20,6 +20,7 @@ const employeeRoutes = require("../routes/employeeRoutes");
 const paymentRoutes = require('../routes/paymentRoutes');
 const notificationRoutes = require("../routes/notificationRoutes");
 const operatingHoursRoutes = require("../routes/operatingHourRoutes");
+const scheduleExceptionRoutes = require("../routes/scheduleExceptionRoutes");
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use("/api/employees", employeeRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/operating-hours", operatingHoursRoutes);
+app.use("/api/schedule-exceptions", scheduleExceptionRoutes);
 // GOOGLE LOGIN (keep existing for backward compatibility)
 app.get(
   "/auth/google",

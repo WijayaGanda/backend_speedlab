@@ -78,6 +78,54 @@ const createBooking = async (req, res) => {
       });
     }
 
+    // 1. Cek tabel Pengecualian Khusus (ScheduleException)
+    let activeSchedule = await ScheduleException.findOne({ date: bookingDate });
+    let isException = true;
+
+    // 2. Jika tidak ada pengecualian, ambil jadwal reguler mingguan (OperatingHour)
+    if (!activeSchedule) {
+      isException = false;
+      const dateObj = new Date(bookingDate);
+      const dayIndex = dateObj.getDay(); // 0 = Minggu, 1 = Senin, dst
+      activeSchedule = await OperatingHour.findOne({ dayIndex: dayIndex });
+    }
+
+    // 3. Validasi Data Ditemukan
+    if (!activeSchedule) {
+      return res.status(500).json({ 
+        success: false, 
+        message: "Jadwal operasional bengkel belum dikonfigurasi oleh Admin." 
+      });
+    }
+
+    // 4. Validasi Status Bengkel Buka/Tutup
+    if (!activeSchedule.isOpen) {
+      const reason = isException && activeSchedule.note ? activeSchedule.note : "jadwal libur reguler";
+      return res.status(400).json({ 
+        success: false, 
+        message: `Maaf, bengkel Speedlab sedang tutup pada tanggal tersebut karena ${reason}. Silakan pilih tanggal lain.` 
+      });
+    }
+
+    // 5. Validasi Jam Sesuai Sesi/Rentang Waktu (timeSlots)
+    let isTimeValid = false;
+    if (activeSchedule.timeSlots && activeSchedule.timeSlots.length > 0) {
+      for (let slot of activeSchedule.timeSlots) {
+        // String format "HH:mm" bisa langsung dibandingkan
+        if (bookingTime >= slot.openTime && bookingTime <= slot.closeTime) {
+          isTimeValid = true;
+          break; // Keluar dari loop jika sudah ketemu slot yang cocok
+        }
+      }
+    }
+
+    if (!isTimeValid) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Waktu booking yang Anda pilih berada di luar jam buka/sesi operasional bengkel." 
+      });
+    }
+
     // ========== AUTO-DETECT FORMAT ==========
     let isFlexibleFormat = hasBookingServices;
     let servicePrice = 0;
